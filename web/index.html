@@ -111,7 +111,7 @@
       </div>
 
       <!-- DOCKER ENGINE SYSTEM RESOURCE CONSUMPTION -->
-      <div class="data-card" style="padding: 20px; margin-top: 24px; border: 1px solid rgba(56, 189, 248, 0.25); background: linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.7) 100%);">
+      <div class="data-card" style="padding: 20px; margin-top: 24px; border: 1px solid var(--border-color); background: var(--bg-card);">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
           <h3 style="font-size: 1.15rem; display: flex; align-items: center; gap: 8px;">
             <span>🐳</span> Tổng Tài Nguyên Docker Engine Đang Chiếm Hệ Thống
@@ -120,21 +120,21 @@
         </div>
 
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
-          <div style="background: rgba(0,0,0,0.25); padding: 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.04);">
+          <div style="background: #0d1117; padding: 14px; border-radius: 6px; border: 1px solid var(--border-color);">
             <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase;">⚡ Docker CPU Usage</div>
-            <div style="font-size: 1.3rem; font-weight: 700; color: #38bdf8; margin-top: 4px;" id="docker-total-cpu">0.0%</div>
+            <div style="font-size: 1.3rem; font-weight: 700; color: #58a6ff; margin-top: 4px;" id="docker-total-cpu">0.0%</div>
             <div class="progress-bar" style="margin-top: 8px;"><div class="progress-fill" id="fill-docker-cpu"></div></div>
           </div>
 
-          <div style="background: rgba(0,0,0,0.25); padding: 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.04);">
+          <div style="background: #0d1117; padding: 14px; border-radius: 6px; border: 1px solid var(--border-color);">
             <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase;">🧠 Docker RAM Memory</div>
-            <div style="font-size: 1.3rem; font-weight: 700; color: #818cf8; margin-top: 4px;" id="docker-total-ram">0 MB (0.0% Server)</div>
-            <div class="progress-bar" style="margin-top: 8px;"><div class="progress-fill" id="fill-docker-ram" style="background: #818cf8;"></div></div>
+            <div style="font-size: 1.3rem; font-weight: 700; color: #a5d6ff; margin-top: 4px;" id="docker-total-ram">0 MB (0.0% Server)</div>
+            <div class="progress-bar" style="margin-top: 8px;"><div class="progress-fill" id="fill-docker-ram" style="background: #a5d6ff;"></div></div>
           </div>
 
-          <div style="background: rgba(0,0,0,0.25); padding: 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.04);">
+          <div style="background: #0d1117; padding: 14px; border-radius: 6px; border: 1px solid var(--border-color);">
             <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase;">🌐 Docker Network Traffic</div>
-            <div style="font-size: 1.05rem; font-weight: 700; color: #a855f7; margin-top: 6px;" id="docker-total-net">📥 0 MB | 📤 0 MB</div>
+            <div style="font-size: 1.05rem; font-weight: 700; color: #d2a8ff; margin-top: 6px;" id="docker-total-net">📥 0 MB | 📤 0 MB</div>
             <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 6px;">Total Rx / Tx across all active containers</div>
           </div>
         </div>
