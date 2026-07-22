@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DockPulse - Lightweight Docker & Host Manager</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">⚡</div>
+      <div>DockPulse</div>
+    </div>
+    <ul class="nav-list">
+      <li class="nav-item active" data-target="dashboard">
+        <span>📊</span> Dashboard
+      </li>
+      <li class="nav-item" data-target="containers">
+        <span>📦</span> Containers
+      </li>
+      <li class="nav-item" data-target="compose">
+        <span>🧩</span> Compose Stacks
+      </li>
+      <li class="nav-item" data-target="images">
+        <span>🖼️</span> Images
+      </li>
+      <li class="nav-item" data-target="volumes">
+        <span>💾</span> Volumes
+      </li>
+      <li class="nav-item" data-target="host-activity">
+        <span>🖥️</span> Host & Processes
+      </li>
+      <li class="nav-item" data-target="security">
+        <span>🛡️</span> Security & Alerts
+      </li>
+      <li class="nav-item" data-target="file-manager">
+        <span>📁</span> File Manager
+      </li>
+      <li class="nav-item" data-target="network-ports">
+        <span>🌐</span> Network & Ports
+      </li>
+      <li class="nav-item" data-target="host-terminal-tab">
+        <span>💻</span> Host Terminal
+      </li>
+      <li class="nav-item" data-target="ai-assistant">
+        <span>🤖</span> AI Assistant
+      </li>
+    </ul>
+  </aside>
+
+  <!-- Main Area -->
+  <main class="main-content">
+    <header class="header">
+      <div>
+        <h1 class="page-title" id="page-title">Dashboard</h1>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 4px;">Host Server Docker & Activity Control Hub</p>
+      </div>
+      <div style="display: flex; gap: 12px; align-items: center;">
+        <div class="status-badge">
+          <div class="pulse-dot"></div> Connected
+        </div>
+        <button class="btn btn-secondary" onclick="logoutSystem()" title="Đăng xuất khỏi hệ thống" style="padding: 6px 12px; font-size: 0.85rem;">🚪 Logout</button>
+      </div>
+    </header>
+
+    <!-- SECTION 1: DASHBOARD -->
+    <section id="sec-dashboard" class="content-section active">
+      <div class="grid-metrics">
+        <div class="metric-card">
+          <div class="metric-header">
+            <span>CPU USAGE</span>
+            <span>💻</span>
+          </div>
+          <div class="metric-value" id="host-cpu">0.0%</div>
+          <div class="progress-bar"><div class="progress-fill" id="fill-cpu"></div></div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-header">
+            <span>RAM MEMORY</span>
+            <span>🧠</span>
+          </div>
+          <div class="metric-value" id="host-ram">0 / 0 MB</div>
+          <div class="progress-bar"><div class="progress-fill" id="fill-ram"></div></div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-header">
+            <span>DISK SPACE (/)</span>
+            <span>💾</span>
+          </div>
+          <div class="metric-value" id="host-disk">0 / 0 GB</div>
+          <div class="progress-bar"><div class="progress-fill" id="fill-disk"></div></div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-header">
+            <span>CONTAINERS</span>
+            <span>🐳</span>
+          </div>
+          <div class="metric-value" id="host-ctrs">0</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);" id="host-load">Load: 0.00</div>
+        </div>
+      </div>
+
+      <!-- DOCKER ENGINE SYSTEM RESOURCE CONSUMPTION -->
+      <div class="data-card" style="padding: 20px; margin-top: 24px; border: 1px solid rgba(56, 189, 248, 0.25); background: linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.7) 100%);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <h3 style="font-size: 1.15rem; display: flex; align-items: center; gap: 8px;">
+            <span>🐳</span> Tổng Tài Nguyên Docker Engine Đang Chiếm Hệ Thống
+          </h3>
+          <span class="badge badge-running" id="docker-total-running-badge">0 Running Containers</span>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+          <div style="background: rgba(0,0,0,0.25); padding: 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.04);">
+            <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase;">⚡ Docker CPU Usage</div>
+            <div style="font-size: 1.3rem; font-weight: 700; color: #38bdf8; margin-top: 4px;" id="docker-total-cpu">0.0%</div>
+            <div class="progress-bar" style="margin-top: 8px;"><div class="progress-fill" id="fill-docker-cpu"></div></div>
+          </div>
+
+          <div style="background: rgba(0,0,0,0.25); padding: 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.04);">
+            <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase;">🧠 Docker RAM Memory</div>
+            <div style="font-size: 1.3rem; font-weight: 700; color: #818cf8; margin-top: 4px;" id="docker-total-ram">0 MB (0.0% Server)</div>
+            <div class="progress-bar" style="margin-top: 8px;"><div class="progress-fill" id="fill-docker-ram" style="background: #818cf8;"></div></div>
+          </div>
+
+          <div style="background: rgba(0,0,0,0.25); padding: 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.04);">
+            <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase;">🌐 Docker Network Traffic</div>
+            <div style="font-size: 1.05rem; font-weight: 700; color: #a855f7; margin-top: 6px;" id="docker-total-net">📥 0 MB | 📤 0 MB</div>
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 6px;">Total Rx / Tx across all active containers</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Realtime & Historical Metrics Chart -->
+      <div class="data-card" style="padding: 24px; margin-top: 24px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+          <h3 style="font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
+            <span>📈</span> Đồ Thị Tài Nguyên (Host vs Docker Total Engine)
+          </h3>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <button class="btn btn-secondary history-btn active" id="btn-chart-live" onclick="setChartMode('live')" style="padding: 4px 10px; font-size: 0.8rem;">⚡ Realtime</button>
+            <button class="btn btn-secondary history-btn" id="btn-chart-24h" onclick="setChartMode('24h')" style="padding: 4px 10px; font-size: 0.8rem;">📅 24 Giờ Qua</button>
+            <button class="btn btn-secondary history-btn" id="btn-chart-7d" onclick="setChartMode('7d')" style="padding: 4px 10px; font-size: 0.8rem;">📅 7 Ngày Qua</button>
+            <button class="btn btn-secondary history-btn" id="btn-chart-30d" onclick="setChartMode('30d')" style="padding: 4px 10px; font-size: 0.8rem;">📅 30 Ngày Qua</button>
+          </div>
+        </div>
+        <canvas id="hostChart" height="90"></canvas>
+      </div>
+    </section>
+
+    <!-- SECTION 2: CONTAINERS -->
+    <section id="sec-containers" class="content-section">
+      <div class="toolbar">
+        <input type="text" id="search-ctrs" class="search-box" placeholder="🔍 Tìm kiếm container, IP, Port, Image...">
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <label style="font-size: 0.85rem; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; gap: 6px;">
+            <input type="checkbox" id="auto-refresh-ctrs-stats" checked> ⚡ Auto-Monitor Stats
+          </label>
+          <button class="btn btn-secondary" onclick="loadContainers()">🔄 Refresh</button>
+        </div>
+      </div>
+
+      <div class="data-card">
+        <table class="table" id="table-containers">
+          <thead>
+            <tr>
+              <th>Name / ID</th>
+              <th>Status</th>
+              <th>Image</th>
+              <th>CPU / RAM / Net I/O</th>
+              <th>Ports (Host -> Private)</th>
+              <th>IP Address</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-containers">
+            <tr><td colspan="7" style="text-align:center;">Đang tải danh sách containers...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- SECTION 3: COMPOSE STACKS -->
+    <section id="sec-compose" class="content-section">
+      <div class="toolbar">
+        <div>
+          <h3 style="font-size: 1.1rem;">🧩 Docker Compose Projects & Stack Resource Monitoring</h3>
+          <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">Giám sát tổng mức tiêu thụ tài nguyên (CPU, RAM, Network) theo Stack và từng Service</p>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <label style="font-size: 0.85rem; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; gap: 6px;">
+            <input type="checkbox" id="auto-refresh-compose-stats" checked> ⚡ Auto-Monitor Stacks
+          </label>
+          <button class="btn btn-secondary" onclick="loadComposeStacks()">🔄 Refresh</button>
+        </div>
+      </div>
+      <div id="compose-stacks-container" style="display: flex; flex-direction: column; gap: 20px;">
+        <!-- Dynamic Compose Stacks -->
+      </div>
+    </section>
+
+    <!-- SECTION 4: IMAGES -->
+    <section id="sec-images" class="content-section">
+      <div class="toolbar">
+        <input type="text" id="search-images" class="search-box" placeholder="🔍 Tìm kiếm Image...">
+        <button class="btn btn-danger" onclick="pruneImages()">🧹 Prune Unused Images</button>
+      </div>
+      <div class="data-card">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Repository:Tag</th>
+              <th>Image ID</th>
+              <th>Size</th>
+              <th>Tag Status</th>
+              <th>Used by Containers</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-images">
+            <tr><td colspan="6" style="text-align:center;">Đang tải danh sách Images...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- SECTION 5: VOLUMES -->
+    <section id="sec-volumes" class="content-section">
+      <div class="toolbar">
+        <input type="text" id="search-volumes" class="search-box" placeholder="🔍 Tìm kiếm Volume...">
+        <button class="btn btn-danger" onclick="pruneVolumes()">🧹 Prune Unused Volumes</button>
+      </div>
+      <div class="data-card">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Volume Name</th>
+              <th>Driver</th>
+              <th>Mount Path</th>
+              <th>Size (Dung lượng)</th>
+              <th>Usage Tag</th>
+              <th>Attached Containers</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-volumes">
+            <tr><td colspan="7" style="text-align:center;">Đang tải danh sách Volumes...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- SECTION 6: HOST & PROCESSES MANAGER -->
+    <section id="sec-host-activity" class="content-section">
+      <div class="grid-metrics">
+        <div class="metric-card">
+          <div class="metric-header">
+            <span>SWAP MEMORY</span>
+            <span>⚡</span>
+          </div>
+          <div class="metric-value" id="host-swap">0 / 0 MB</div>
+          <div class="progress-bar"><div class="progress-fill" id="fill-swap" style="background: var(--accent-amber);"></div></div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-header">
+            <span>DISK I/O READ / WRITE</span>
+            <span>💿</span>
+          </div>
+          <div class="metric-value" id="host-disk-io" style="font-size: 1.3rem;">0 / 0 MB</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">Accumulated disk activity</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-header">
+            <span>NETWORK I/O RX / TX</span>
+            <span>🌐</span>
+          </div>
+          <div class="metric-value" id="host-net-io" style="font-size: 1.3rem;">0 / 0 KB</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">Network interfaces total</div>
+        </div>
+      </div>
+
+      <div class="toolbar" style="margin-top: 28px;">
+        <h3 style="font-size: 1.1rem;">🔥 Top Tiến Trình Đang Chạy Trên Host (Process Rankings)</h3>
+        <div style="display: flex; gap: 10px;">
+          <select id="proc-sort" class="search-box" style="width: 200px;" onchange="loadHostProcesses()">
+            <option value="cpu">⚡ Sắp xếp theo % CPU</option>
+            <option value="memory">🧠 Sắp xếp theo RAM (MB)</option>
+          </select>
+          <button class="btn btn-secondary" onclick="loadHostProcesses()">🔄 Refresh</button>
+        </div>
+      </div>
+
+      <div class="data-card">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>PID</th>
+              <th>User</th>
+              <th>Process Name / Command</th>
+              <th>RAM Usage (MB)</th>
+              <th>RAM %</th>
+              <th>CPU Ticks</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-processes">
+            <tr><td colspan="7" style="text-align:center;">Đang quét tiến trình Host...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- SECTION 7: DIRECT HOST TERMINAL TAB -->
+    <section id="sec-host-terminal-tab" class="content-section">
+      <div class="toolbar">
+        <div>
+          <h3 style="font-size: 1.2rem;">💻 Interactive Host Server Web Terminal Shell</h3>
+          <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">Truy cập trực tiếp Terminal Bash của Host Server ngay trên trình duyệt</p>
+        </div>
+        <button class="btn btn-primary" onclick="initHostTabTerminal()">🔌 Connect / Reset Shell</button>
+      </div>
+
+      <div class="data-card" style="padding: 16px; background: #070a12; border: 1px solid var(--border-color); border-radius: 14px;">
+        <div id="host-terminal-console" class="terminal-window" style="height: 550px;" tabindex="0">
+Click nút "Connect / Reset Shell" ở trên hoặc bắt đầu gõ phím để kết nối với Host Terminal Shell...
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 8: AI TROUBLESHOOTING ASSISTANT -->
+    <section id="sec-ai-assistant" class="content-section">
+      <div class="toolbar">
+        <div>
+          <h3 style="font-size: 1.2rem;">🤖 AI Troubleshooting Assistant & Health Diagnostics</h3>
+          <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">Tự động xoay vòng 36 Gemini Keys & 10 Groq Keys để chẩn đoán hệ thống</p>
+        </div>
+        <button class="btn btn-primary" onclick="runAIAuditSystem()">🛡️ System Health AI Audit</button>
+      </div>
+
+      <div class="data-card" style="padding: 24px; min-height: 450px; display: flex; flex-direction: column;">
+        <div id="ai-response-box" style="flex: 1; background: rgba(15, 23, 42, 0.6); padding: 20px; border-radius: 12px; font-family: sans-serif; font-size: 0.95rem; line-height: 1.6; color: #e2e8f0; overflow-y: auto; white-space: pre-wrap;">
+Chào bạn! Tôi là Trợ lý AI Chẩn đoán Sự cố Host Server.
+Bạn có thể bấm nút "🛡️ System Health AI Audit" ở trên để tôi quét đánh giá sức khỏe server, hoặc đặt câu hỏi trực tiếp dưới đây!
+        </div>
+
+        <div style="display: flex; gap: 12px; margin-top: 20px;">
+          <input type="text" id="ai-prompt-input" class="search-box" style="flex: 1;" placeholder="💬 Nhập câu hỏi hoặc sự cố cần AI tư vấn...">
+          <button class="btn btn-primary" onclick="sendCustomAIPrompt()">🚀 Gửi AI</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 9: WEB FILE MANAGER -->
+    <section id="sec-file-manager" class="content-section">
+      <div class="toolbar" style="flex-wrap: wrap; gap: 12px;">
+        <div style="display: flex; gap: 10px; align-items: center; flex: 1;">
+          <button class="btn btn-secondary" onclick="navigateUpFileDir()" title="Lên thư mục cha">⬆️ Up</button>
+          <div id="file-breadcrumbs" style="background: rgba(15, 23, 42, 0.6); padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border-color); font-family: monospace; font-size: 0.9rem; flex: 1; white-space: nowrap; overflow-x: auto;">
+            🏠 root
+          </div>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-primary" onclick="promptCreateFileItem(false)">➕ Tạo Tệp</button>
+          <button class="btn btn-primary" onclick="promptCreateFileItem(true)">📁 Tạo Folder</button>
+          <button class="btn btn-secondary" onclick="triggerFileUpload()">📤 Upload Tệp</button>
+          <button class="btn btn-secondary" onclick="loadFiles()">🔄 Refresh</button>
+          <input type="file" id="file-upload-input" style="display: none;" onchange="handleFileUploadSubmit(this)">
+        </div>
+      </div>
+
+      <div class="data-card">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Tên Tệp / Thư mục</th>
+              <th>Loại</th>
+              <th>Dung lượng</th>
+              <th>Cập nhật gần nhất</th>
+              <th>Quyền (Mode)</th>
+              <th>Thao tác</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-files">
+            <tr><td colspan="6" style="text-align:center;">Đang tải danh sách tệp...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- SECTION 10: NETWORK & PORTS DASHBOARD -->
+    <section id="sec-network-ports" class="content-section">
+      <div class="toolbar">
+        <div>
+          <h3 style="font-size: 1.2rem;">🌐 Quản Lý Cổng Server & Mạng Docker</h3>
+          <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">Giám sát các cổng Listening trên Host và quản lý Docker Networks custom</p>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-primary" onclick="promptCreateDockerNetwork()">➕ Tạo Docker Network</button>
+          <button class="btn btn-secondary" onclick="loadNetworkPorts()">🔄 Refresh</button>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 24px;">
+        <!-- Host Listening Ports Card -->
+        <div class="data-card" style="padding: 20px;">
+          <h4 style="margin-bottom: 16px; font-size: 1.05rem; display: flex; align-items: center; gap: 8px;">
+            <span>⚡</span> Cổng Đang Lắng Nghe Trên Host (Host Listening Ports)
+          </h4>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Giao thức</th>
+                <th>Cổng (Port)</th>
+                <th>Địa chỉ IP Listen</th>
+                <th>Trạng thái</th>
+                <th>Tiến trình sử dụng (PID)</th>
+                <th>Thao tác</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-ports">
+              <tr><td colspan="6" style="text-align:center;">Đang quét các cổng lắng nghe...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Docker Networks Card -->
+        <div class="data-card" style="padding: 20px;">
+          <h4 style="margin-bottom: 16px; font-size: 1.05rem; display: flex; align-items: center; gap: 8px;">
+            <span>🐳</span> Danh Sách Mạng Docker (Docker Networks)
+          </h4>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Tên Mạng</th>
+                <th>ID</th>
+                <th>Driver</th>
+                <th>Phạm vi (Scope)</th>
+                <th>Containers Đang Kết Nối</th>
+                <th>Thao tác</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-networks">
+              <tr><td colspan="6" style="text-align:center;">Đang tải danh sách mạng...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 11: SECURITY & ATTACK CENTER -->
+    <section id="sec-security" class="content-section">
+      <div class="toolbar">
+        <div>
+          <h3 style="font-size: 1.2rem; display: flex; align-items: center; gap: 8px;">
+            <span>🛡️</span> Trung Tâm Bảo Mật System & Cảnh Báo Tấn Công
+          </h3>
+          <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">Giám sát Brute-Force SSH, Rủi ro Docker Container, Tiến trình lạ & Cổng mở public</p>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-primary" onclick="loadSecurityAudit()">🛡️ Quét Bảo Mật Live</button>
+        </div>
+      </div>
+
+      <!-- Security Status Cards -->
+      <div class="grid-metrics">
+        <div class="metric-card" style="border: 1px solid rgba(56, 189, 248, 0.2);">
+          <div class="metric-header">
+            <span>MỨC ĐỘ NGUY CƠ</span>
+            <span>🛡️</span>
+          </div>
+          <div class="metric-value" id="sec-threat-level">🟢 SECURE</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;" id="sec-scan-time">Scan time: --</div>
+        </div>
+
+        <div class="metric-card" style="border: 1px solid rgba(239, 68, 68, 0.2);">
+          <div class="metric-header">
+            <span>SSH FAILED LOGINS</span>
+            <span>🔑</span>
+          </div>
+          <div class="metric-value" id="sec-failed-logins" style="color: var(--accent-amber);">0</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">Brute-force attempts detected</div>
+        </div>
+
+        <div class="metric-card" style="border: 1px solid rgba(245, 158, 11, 0.2);">
+          <div class="metric-header">
+            <span>PRIVILEGED CONTAINERS</span>
+            <span>🐳</span>
+          </div>
+          <div class="metric-value" id="sec-privileged-ctrs">0</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">Full root host access containers</div>
+        </div>
+
+        <div class="metric-card" style="border: 1px solid rgba(168, 85, 247, 0.2);">
+          <div class="metric-header">
+            <span>PUBLIC EXPOSED PORTS</span>
+            <span>🌐</span>
+          </div>
+          <div class="metric-value" id="sec-exposed-ports" style="color: #a855f7;">0</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">Sensitives DB ports listening 0.0.0.0</div>
+        </div>
+      </div>
+
+      <!-- Security Threats & Recommended Actions -->
+      <div class="data-card" style="padding: 24px; margin-top: 24px;">
+        <h4 style="font-size: 1.1rem; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+          <span>🚨</span> Danh Sách Mối Đe Dọa & Khuyến Nghị Xử Lý
+        </h4>
+        <div id="security-threats-container" style="display: flex; flex-direction: column; gap: 12px;">
+          <div style="text-align: center; color: var(--text-muted); padding: 20px;">Đang quét phân tích bảo mật hệ thống...</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- MODAL: LIVE LOGS -->
+  <div class="modal-overlay" id="modal-logs">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title" id="logs-title">📋 Container Logs</div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <input type="text" id="logs-filter" class="search-box" placeholder="🔍 Lọc log (Filter)..." style="width: 180px; padding: 6px 12px;">
+          <button class="btn btn-primary" onclick="diagnoseLogsWithAI()" title="AI Phân Tích Lỗi Container">🤖 AI Diagnose</button>
+          <button class="btn btn-danger" onclick="clearContainerLogs()" title="Truncate file log về 0 byte">🗑️ Clear Logs</button>
+          <button class="btn btn-secondary" onclick="closeLogsModal()">✕</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="log-window" id="log-console">Đang kết nối live log stream...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: WEB TERMINAL -->
+  <div class="modal-overlay" id="modal-terminal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title" id="terminal-title">💻 Container Terminal Shell</div>
+        <button class="btn btn-secondary" onclick="closeTerminalModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="terminal-window" id="terminal-console" tabindex="0">Đang khởi tạo shell session...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: AI CONTAINER DIAGNOSE -->
+  <div class="modal-overlay" id="modal-ai-diagnose">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title" id="ai-diagnose-title">🤖 AI Container Diagnostics Result</div>
+        <button class="btn btn-secondary" onclick="closeModal('modal-ai-diagnose')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="ai-diagnose-content" style="background: rgba(15, 23, 42, 0.8); padding: 20px; border-radius: 10px; white-space: pre-wrap; font-size: 0.95rem; line-height: 1.6; color: #f1f5f9;">
+Đang phân tích sự cố bằng AI...
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: FILE EDITOR -->
+  <div class="modal-overlay" id="modal-file-editor">
+    <div class="modal-box" style="max-width: 900px;">
+      <div class="modal-header">
+        <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+          <span>✏️ Chỉnh Sửa File:</span>
+          <code id="editor-filepath" style="color: #38bdf8; font-size: 0.9rem;">path/to/file</code>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-primary" onclick="saveFileEditor()">💾 Lưu Tệp</button>
+          <button class="btn btn-secondary" onclick="closeModal('modal-file-editor')">✕</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <textarea id="editor-content" style="width: 100%; height: 500px; background: #090d16; color: #38bdf8; border: 1px solid var(--border-color); border-radius: 8px; padding: 14px; font-family: 'Fira Code', 'Courier New', monospace; font-size: 0.9rem; line-height: 1.5; resize: vertical; outline: none;"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script src="js/containers.js"></script>
+  <script src="js/logs.js"></script>
+  <script src="js/terminal.js"></script>
+  <script src="js/compose.js"></script>
+  <script src="js/images.js"></script>
+  <script src="js/volumes.js"></script>
+  <script src="js/host_activity.js"></script>
+  <script src="js/security.js"></script>
+  <script src="js/files.js"></script>
+  <script src="js/networks.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/monitoring.js"></script>
+  <script>
+    async function logoutSystem() {
+      if (confirm("Bạn có chắc chắn muốn đăng xuất khỏi DockPulse không?")) {
+        await fetch("/api/logout", { method: "POST" });
+        window.location.href = "/login.html";
+      }
+    }
+  </script>
+</body>
+</html>

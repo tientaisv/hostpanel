@@ -1,0 +1,9 @@
+# DockPulse Git Ignore Rules
+.env
+config.json
+dockpulse
+*.log
+*.tmp
+/tmp
+.idea/
+.vscode/
