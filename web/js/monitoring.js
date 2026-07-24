@@ -95,8 +95,21 @@ function initMonitoring() {
   };
 }
 
+let currentStatsData = null;
+
+function formatUptime(uptimeSec) {
+  if (!uptimeSec) return '--';
+  const days = Math.floor(uptimeSec / 86400);
+  const hours = Math.floor((uptimeSec % 86400) / 3600);
+  const mins = Math.floor((uptimeSec % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h ${mins}m`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}
+
 function updateDashboardUI(data) {
   if (!data) return;
+  currentStatsData = data;
 
   // Host CPU
   const cpuVal = data.cpu_percent ? data.cpu_percent.toFixed(1) : 0;
@@ -165,6 +178,39 @@ function updateDashboardUI(data) {
   // Containers & Load
   if (document.getElementById("host-ctrs")) document.getElementById("host-ctrs").textContent = data.containers_count || 0;
   if (document.getElementById("host-load")) document.getElementById("host-load").textContent = `Load: ${data.load_1 || 0.00}, ${data.load_5 || 0.00}, ${data.load_15 || 0.00}`;
+
+  // Server Static & Hardware Details
+  if (document.getElementById("srv-hostname")) document.getElementById("srv-hostname").textContent = data.hostname || "Linux Host";
+  if (document.getElementById("srv-os")) document.getElementById("srv-os").textContent = data.os_info || "Linux";
+  if (document.getElementById("srv-kernel")) document.getElementById("srv-kernel").textContent = `Kernel: ${data.kernel_version || '-'}`;
+  if (document.getElementById("srv-cpumodel")) document.getElementById("srv-cpumodel").textContent = data.cpu_model || "CPU Processor";
+  if (document.getElementById("srv-cores")) document.getElementById("srv-cores").textContent = `${data.cores_count || 1} Cores / Threads`;
+  if (document.getElementById("srv-uptime")) document.getElementById("srv-uptime").textContent = formatUptime(data.uptime_sec);
+
+  // CPU Core Performance Grid Breakdown
+  if (document.getElementById("cpu-cores-container")) {
+    if (data.cpu_core_percents && data.cpu_core_percents.length > 0) {
+      const coresHtml = data.cpu_core_percents.map(c => {
+        const pctVal = c.percent ? c.percent.toFixed(1) : "0.0";
+        let color = "#34d399";
+        if (c.percent > 85) color = "#f87171";
+        else if (c.percent > 60) color = "#fbbf24";
+
+        return `
+          <div style="background: #0d1117; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border-color);">
+            <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 6px;">
+              <span style="font-weight: 600; color: var(--text-main);">Core ${c.core_id}</span>
+              <span style="font-weight: 700; color: ${color};">${pctVal}%</span>
+            </div>
+            <div class="progress-bar" style="height: 6px; background: rgba(255,255,255,0.08);">
+              <div class="progress-fill" style="width: ${Math.min(c.percent, 100)}%; background: ${color}; border-radius: 3px;"></div>
+            </div>
+          </div>
+        `;
+      }).join('');
+      document.getElementById("cpu-cores-container").innerHTML = coresHtml;
+    }
+  }
 
   // Total Docker Engine Resource Consumption
   if (document.getElementById("docker-total-running-badge")) {
@@ -271,4 +317,105 @@ function renderHistoricalChart(records) {
   hostChartInstance.data.datasets[2].data = dockerCpuData;
   hostChartInstance.data.datasets[3].data = dockerRamData;
   hostChartInstance.update();
+}
+
+function triggerResetSwapModal() {
+  const swapUsedMB = currentStatsData ? (currentStatsData.swap_used_mb || 0) : 0;
+  const memTotal = currentStatsData ? (currentStatsData.mem_total_mb || 0) : 0;
+  const memUsed = currentStatsData ? (currentStatsData.mem_used_mb || 0) : 0;
+  const memFreeMB = Math.max(0, memTotal - memUsed);
+
+  if (document.getElementById("modal-swap-used")) {
+    document.getElementById("modal-swap-used").textContent = `${swapUsedMB} MB`;
+  }
+  if (document.getElementById("modal-ram-avail")) {
+    document.getElementById("modal-ram-avail").textContent = `${memFreeMB} MB`;
+  }
+
+  const btnConfirm = document.getElementById("btn-confirm-reset-swap");
+  const safetyBadge = document.getElementById("modal-swap-safety");
+  const statusMsg = document.getElementById("reset-swap-status-msg");
+
+  if (statusMsg) {
+    statusMsg.style.display = "none";
+    statusMsg.textContent = "";
+  }
+
+  if (swapUsedMB === 0) {
+    if (safetyBadge) {
+      safetyBadge.className = "badge badge-running";
+      safetyBadge.textContent = "Swap đang trống (0 MB)";
+    }
+    if (btnConfirm) btnConfirm.disabled = false;
+  } else if (memFreeMB > swapUsedMB) {
+    if (safetyBadge) {
+      safetyBadge.className = "badge badge-running";
+      safetyBadge.textContent = "✅ Đủ RAM để xả Swap";
+    }
+    if (btnConfirm) btnConfirm.disabled = false;
+  } else {
+    if (safetyBadge) {
+      safetyBadge.className = "badge badge-danger";
+      safetyBadge.textContent = "⚠️ RAM không đủ để xả Swap!";
+    }
+    if (btnConfirm) btnConfirm.disabled = true;
+  }
+
+  const modal = document.getElementById("modal-reset-swap");
+  if (modal) modal.classList.add("active");
+}
+
+async function executeResetSwap() {
+  const btnConfirm = document.getElementById("btn-confirm-reset-swap");
+  const statusMsg = document.getElementById("reset-swap-status-msg");
+
+  if (btnConfirm) {
+    btnConfirm.disabled = true;
+    btnConfirm.textContent = "⏳ Đang giải phóng Swap...";
+  }
+
+  if (statusMsg) {
+    statusMsg.style.display = "block";
+    statusMsg.style.background = "rgba(56, 189, 248, 0.15)";
+    statusMsg.style.color = "#38bdf8";
+    statusMsg.style.border = "1px solid rgba(56, 189, 248, 0.3)";
+    statusMsg.textContent = "Đang thực hiện swapoff -a && swapon -a. Vui lòng chờ...";
+  }
+
+  try {
+    const res = await fetch("/api/system/swap/reset", { method: "POST" });
+    const data = await res.json();
+    
+    if (res.ok) {
+      if (statusMsg) {
+        statusMsg.style.background = "rgba(52, 211, 153, 0.15)";
+        statusMsg.style.color = "#34d399";
+        statusMsg.style.border = "1px solid rgba(52, 211, 153, 0.3)";
+        statusMsg.textContent = `✅ ${data.message || "Reset Swap thành công!"}`;
+      }
+      setTimeout(() => {
+        const modal = document.getElementById("modal-reset-swap");
+        if (modal) modal.classList.remove("active");
+      }, 2500);
+    } else {
+      if (statusMsg) {
+        statusMsg.style.background = "rgba(248, 113, 113, 0.15)";
+        statusMsg.style.color = "#f87171";
+        statusMsg.style.border = "1px solid rgba(248, 113, 113, 0.3)";
+        statusMsg.textContent = `❌ ${data.error || "Không thể reset Swap"}`;
+      }
+    }
+  } catch (err) {
+    if (statusMsg) {
+      statusMsg.style.background = "rgba(248, 113, 113, 0.15)";
+      statusMsg.style.color = "#f87171";
+      statusMsg.style.border = "1px solid rgba(248, 113, 113, 0.3)";
+      statusMsg.textContent = `❌ Lỗi kết nối server: ${err.message}`;
+    }
+  } finally {
+    if (btnConfirm) {
+      btnConfirm.disabled = false;
+      btnConfirm.textContent = "⚡ Xác Nhận Reset Swap";
+    }
+  }
 }

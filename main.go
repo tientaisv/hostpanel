@@ -67,6 +67,7 @@ func main() {
 	mux.HandleFunc("/api/system/processes/kill", authMiddleware(handleProcessKill))
 	mux.HandleFunc("/api/system/security", authMiddleware(handleSecurityAudit))
 	mux.HandleFunc("/api/system/security/block-ip", authMiddleware(handleBlockIP))
+	mux.HandleFunc("/api/system/swap/reset", authMiddleware(handleResetSwap))
 
 	mux.HandleFunc("/api/ai/diagnose", authMiddleware(handleAIDiagnose))
 	mux.HandleFunc("/api/ai/audit", authMiddleware(handleAIAudit))
@@ -503,6 +504,19 @@ func handleProcessKill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonResponse(w, 200, map[string]string{"status": "killed"})
+}
+
+func handleResetSwap(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	msg, err := system.ResetSwap()
+	if err != nil {
+		jsonResponse(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, 200, map[string]string{"status": "ok", "message": msg})
 }
 
 func handleSecurityAudit(w http.ResponseWriter, r *http.Request) {

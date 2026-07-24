@@ -3,44 +3,58 @@ package system
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 )
 
+type CPUCoreInfo struct {
+	CoreID  int     `json:"core_id"`
+	Percent float64 `json:"percent"`
+}
+
 type HostStats struct {
-	CPUPercent      float64 `json:"cpu_percent"`
-	MemTotalMB      uint64  `json:"mem_total_mb"`
-	MemUsedMB       uint64  `json:"mem_used_mb"`
-	MemPercent      float64 `json:"mem_percent"`
-	SwapTotalMB     uint64  `json:"swap_total_mb"`
-	SwapUsedMB      uint64  `json:"swap_used_mb"`
-	SwapPercent     float64 `json:"swap_percent"`
-	DiskTotalGB     uint64  `json:"disk_total_gb"`
-	DiskUsedGB      uint64  `json:"disk_used_gb"`
-	DiskPercent     float64 `json:"disk_percent"`
-	NetRxKB         float64 `json:"net_rx_kb"`
-	NetTxKB         float64 `json:"net_tx_kb"`
-	DiskReadMB      float64 `json:"disk_read_mb"`
-	DiskWriteMB     float64 `json:"disk_write_mb"`
-	NetRxRateKB     float64 `json:"net_rx_rate_kb"`
-	NetTxRateKB     float64 `json:"net_tx_rate_kb"`
-	DiskReadRateMB  float64 `json:"disk_read_rate_mb"`
-	DiskWriteRateMB float64 `json:"disk_write_rate_mb"`
-	LoadAvg1        float64 `json:"load_1"`
-	LoadAvg5        float64 `json:"load_5"`
-	LoadAvg15       float64 `json:"load_15"`
-	UptimeSec          uint64  `json:"uptime_sec"`
-	Containers         int     `json:"containers_count"`
-	DockerRunningCount int     `json:"docker_running_count"`
-	DockerCPUPercent   float64 `json:"docker_cpu_percent"`
-	DockerMemUsedMB    float64 `json:"docker_mem_used_mb"`
-	DockerMemPercent   float64 `json:"docker_mem_percent"`
-	DockerNetRxMB      float64 `json:"docker_net_rx_mb"`
-	DockerNetTxMB      float64 `json:"docker_net_tx_mb"`
+	Hostname           string        `json:"hostname"`
+	OSInfo             string        `json:"os_info"`
+	KernelVersion      string        `json:"kernel_version"`
+	CPUModel           string        `json:"cpu_model"`
+	CoresCount         int           `json:"cores_count"`
+	CPUCorePercents    []CPUCoreInfo `json:"cpu_core_percents"`
+	CPUPercent         float64       `json:"cpu_percent"`
+	MemTotalMB         uint64        `json:"mem_total_mb"`
+	MemUsedMB          uint64        `json:"mem_used_mb"`
+	MemPercent         float64       `json:"mem_percent"`
+	SwapTotalMB        uint64        `json:"swap_total_mb"`
+	SwapUsedMB         uint64        `json:"swap_used_mb"`
+	SwapPercent        float64       `json:"swap_percent"`
+	DiskTotalGB        uint64        `json:"disk_total_gb"`
+	DiskUsedGB         uint64        `json:"disk_used_gb"`
+	DiskPercent        float64       `json:"disk_percent"`
+	NetRxKB            float64       `json:"net_rx_kb"`
+	NetTxKB            float64       `json:"net_tx_kb"`
+	DiskReadMB         float64       `json:"disk_read_mb"`
+	DiskWriteMB        float64       `json:"disk_write_mb"`
+	NetRxRateKB        float64       `json:"net_rx_rate_kb"`
+	NetTxRateKB        float64       `json:"net_tx_rate_kb"`
+	DiskReadRateMB     float64       `json:"disk_read_rate_mb"`
+	DiskWriteRateMB    float64       `json:"disk_write_rate_mb"`
+	LoadAvg1           float64       `json:"load_1"`
+	LoadAvg5           float64       `json:"load_5"`
+	LoadAvg15          float64       `json:"load_15"`
+	UptimeSec          uint64        `json:"uptime_sec"`
+	Containers         int           `json:"containers_count"`
+	DockerRunningCount int           `json:"docker_running_count"`
+	DockerCPUPercent   float64       `json:"docker_cpu_percent"`
+	DockerMemUsedMB    float64       `json:"docker_mem_used_mb"`
+	DockerMemPercent   float64       `json:"docker_mem_percent"`
+	DockerNetRxMB      float64       `json:"docker_net_rx_mb"`
+	DockerNetTxMB      float64       `json:"docker_net_tx_mb"`
 }
 
 type ContainerStats struct {
@@ -54,18 +68,77 @@ type ContainerStats struct {
 	BlockWriteMB float64 `json:"block_write_mb"`
 }
 
+type coreRaw struct {
+	idle  uint64
+	total uint64
+}
+
 var (
 	lastIdleTime, lastTotalTime     uint64
+	lastCoreStats                   map[int]coreRaw
 	lastNetRxKB, lastNetTxKB        float64
 	lastDiskReadMB, lastDiskWriteMB float64
 	lastStatsTime                   time.Time
+
+	cachedHostname string
+	cachedOSInfo   string
+	cachedKernel   string
+	cachedCPUModel string
+	cachedCores    int
 )
+
+func getStaticServerInfo() (string, string, string, string, int) {
+	if cachedHostname == "" {
+		if h, err := os.Hostname(); err == nil {
+			cachedHostname = h
+		} else {
+			cachedHostname = "Unknown Host"
+		}
+
+		cachedOSInfo = "Linux"
+		if data, err := ioutil.ReadFile("/etc/os-release"); err == nil {
+			for _, line := range strings.Split(string(data), "\n") {
+				if strings.HasPrefix(line, "PRETTY_NAME=") {
+					cachedOSInfo = strings.Trim(strings.TrimPrefix(line, "PRETTY_NAME="), "\"")
+					break
+				}
+			}
+		}
+
+		if data, err := ioutil.ReadFile("/proc/sys/kernel/osrelease"); err == nil {
+			cachedKernel = strings.TrimSpace(string(data))
+		} else {
+			cachedKernel = "Linux"
+		}
+
+		if data, err := ioutil.ReadFile("/proc/cpuinfo"); err == nil {
+			for _, line := range strings.Split(string(data), "\n") {
+				if strings.HasPrefix(line, "model name") {
+					parts := strings.Split(line, ":")
+					if len(parts) >= 2 {
+						cachedCPUModel = strings.TrimSpace(parts[1])
+						break
+					}
+				}
+			}
+		}
+		if cachedCPUModel == "" {
+			cachedCPUModel = "Standard Processor"
+		}
+
+		cachedCores = runtime.NumCPU()
+	}
+	return cachedHostname, cachedOSInfo, cachedKernel, cachedCPUModel, cachedCores
+}
 
 func GetHostStats() (*HostStats, error) {
 	stats := &HostStats{}
 
-	// CPU %
-	cpuPct, idle, total := readCPUStats()
+	// Server Static Info
+	stats.Hostname, stats.OSInfo, stats.KernelVersion, stats.CPUModel, stats.CoresCount = getStaticServerInfo()
+
+	// CPU % & Per-Core %
+	cpuPct, idle, total, coreInfos := readCPUStats()
 	if lastTotalTime > 0 && total > lastTotalTime {
 		totalDelta := float64(total - lastTotalTime)
 		idleDelta := float64(idle - lastIdleTime)
@@ -76,6 +149,7 @@ func GetHostStats() (*HostStats, error) {
 	lastIdleTime = idle
 	lastTotalTime = total
 	stats.CPUPercent = cpuPct
+	stats.CPUCorePercents = coreInfos
 
 	// Mem & Swap info
 	memTotal, memFree, memBuffers, memCached, swapTotal, swapFree := readMemAndSwapStats()
@@ -159,31 +233,111 @@ func GetHostStats() (*HostStats, error) {
 	return stats, nil
 }
 
-func readCPUStats() (float64, uint64, uint64) {
+func readCPUStats() (float64, uint64, uint64, []CPUCoreInfo) {
 	file, err := os.Open("/proc/stat")
 	if err != nil {
-		return 0, 0, 0
+		return 0, 0, 0, nil
 	}
 	defer file.Close()
 
+	var totalIdle, totalTime uint64
+	currentCores := make(map[int]coreRaw)
+	coreInfos := make([]CPUCoreInfo, 0)
+
 	scanner := bufio.NewScanner(file)
-	if scanner.Scan() {
+	for scanner.Scan() {
 		line := scanner.Text()
 		fields := strings.Fields(line)
-		if len(fields) >= 5 && fields[0] == "cpu" {
-			var total uint64
-			var idle uint64
+		if len(fields) < 5 {
+			continue
+		}
+
+		if fields[0] == "cpu" {
 			for i, field := range fields[1:] {
 				val, _ := strconv.ParseUint(field, 10, 64)
-				total += val
+				totalTime += val
 				if i == 3 { // 4th field is idle
-					idle = val
+					totalIdle = val
 				}
 			}
-			return 0, idle, total
+		} else if strings.HasPrefix(fields[0], "cpu") {
+			coreIDStr := strings.TrimPrefix(fields[0], "cpu")
+			coreID, errCore := strconv.Atoi(coreIDStr)
+			if errCore == nil {
+				var cTotal, cIdle uint64
+				for i, field := range fields[1:] {
+					val, _ := strconv.ParseUint(field, 10, 64)
+					cTotal += val
+					if i == 3 {
+						cIdle = val
+					}
+				}
+				currentCores[coreID] = coreRaw{idle: cIdle, total: cTotal}
+
+				var pct float64
+				if lastCoreStats != nil {
+					if old, ok := lastCoreStats[coreID]; ok && cTotal > old.total {
+						tDelta := float64(cTotal - old.total)
+						iDelta := float64(cIdle - old.idle)
+						if tDelta > 0 {
+							pct = (1.0 - (iDelta / tDelta)) * 100.0
+							if pct < 0 {
+								pct = 0
+							}
+						}
+					}
+				}
+				coreInfos = append(coreInfos, CPUCoreInfo{
+					CoreID:  coreID,
+					Percent: pct,
+				})
+			}
 		}
 	}
-	return 0, 0, 0
+	lastCoreStats = currentCores
+	return 0, totalIdle, totalTime, coreInfos
+}
+
+func ResetSwap() (string, error) {
+	_, memFree, memBuffers, memCached, swapTotal, swapFree := readMemAndSwapStats()
+	if swapTotal == 0 {
+		return "", fmt.Errorf("Hệ thống không cài đặt bộ nhớ Swap (SwapTotal = 0)")
+	}
+
+	swapUsed := swapTotal - swapFree
+	swapUsedMB := swapUsed / 1024
+	if swapUsed == 0 {
+		return "Swap hiện tại đang trống (0 MB). Không cần reset!", nil
+	}
+
+	// Calculate RAM available: free + buffers + cached
+	ramAvail := memFree + memBuffers + memCached
+	ramAvailMB := ramAvail / 1024
+
+	if ramAvail <= swapUsed {
+		return "", fmt.Errorf("Không đủ RAM trống để reset Swap an toàn! Swap đang sử dụng: %d MB, trong khi RAM khả dụng chỉ có: %d MB. Vui lòng giải phóng RAM trước.", swapUsedMB, ramAvailMB)
+	}
+
+	// 1. Flush/drop page cache to free up contiguous physical RAM before swapoff
+	_ = exec.Command("sysctl", "-w", "vm.drop_caches=3").Run()
+
+	// 2. Execute swapoff -a
+	outOff, errOff := exec.Command("swapoff", "-a").CombinedOutput()
+	if errOff != nil {
+		// Fallback: try specifying active swap files directly from /proc/swaps
+		outOff2, errOff2 := exec.Command("bash", "-c", "for s in $(tail -n +2 /proc/swaps | awk '{print $1}'); do swapoff \"$s\" || exit 1; done").CombinedOutput()
+		if errOff2 != nil {
+			return "", fmt.Errorf("Không thể giải phóng Swap: %v. Chi tiết: %s %s. Đảm bảo server có đủ RAM khả dụng.", errOff, strings.TrimSpace(string(outOff)), strings.TrimSpace(string(outOff2)))
+		}
+	}
+
+	// 3. Execute swapon -a
+	outOn, errOn := exec.Command("swapon", "-a").CombinedOutput()
+	if errOn != nil {
+		return "", fmt.Errorf("Đã giải phóng Swap nhưng gặp lỗi khi bật lại Swap (swapon -a): %v (%s)", errOn, strings.TrimSpace(string(outOn)))
+	}
+
+	return fmt.Sprintf("Reset Swap thành công! Đã chuyển %d MB từ Swap trở lại RAM.", swapUsedMB), nil
 }
 
 func readMemAndSwapStats() (uint64, uint64, uint64, uint64, uint64, uint64) {
