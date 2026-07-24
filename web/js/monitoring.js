@@ -26,6 +26,10 @@ function initMonitoring() {
             backgroundColor: "rgba(56, 189, 248, 0.1)",
             fill: false,
             tension: 0.3,
+            pointRadius: 0,
+            pointHoverRadius: 6,
+            pointHitRadius: 10,
+            borderWidth: 2,
             data: []
           },
           {
@@ -34,6 +38,10 @@ function initMonitoring() {
             backgroundColor: "rgba(99, 102, 241, 0.1)",
             fill: false,
             tension: 0.3,
+            pointRadius: 0,
+            pointHoverRadius: 6,
+            pointHitRadius: 10,
+            borderWidth: 2,
             data: []
           },
           {
@@ -43,6 +51,10 @@ function initMonitoring() {
             borderDash: [4, 4],
             fill: false,
             tension: 0.3,
+            pointRadius: 0,
+            pointHoverRadius: 6,
+            pointHitRadius: 10,
+            borderWidth: 2,
             data: []
           },
           {
@@ -52,14 +64,28 @@ function initMonitoring() {
             borderDash: [4, 4],
             fill: false,
             tension: 0.3,
+            pointRadius: 0,
+            pointHoverRadius: 6,
+            pointHitRadius: 10,
+            borderWidth: 2,
             data: []
           }
         ]
       },
       options: {
         responsive: true,
+        elements: {
+          point: {
+            radius: 0,
+            hoverRadius: 6,
+            hitRadius: 10
+          },
+          line: {
+            borderWidth: 2
+          }
+        },
         scales: {
-          x: { grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#94a3b8" } },
+          x: { grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#94a3b8", maxTicksLimit: 12 } },
           y: { min: 0, max: 100, grid: { color: "rgba(255,255,255,0.05)" }, ticks: { color: "#94a3b8" } }
         },
         plugins: {
@@ -289,13 +315,24 @@ async function setChartMode(mode) {
 function renderHistoricalChart(records) {
   if (!hostChartInstance || !records) return;
 
+  // Downsample historical data points if records exceed max limit (e.g. 120)
+  let sampledRecords = records;
+  const maxPoints = 120;
+  if (records.length > maxPoints) {
+    const step = Math.ceil(records.length / maxPoints);
+    sampledRecords = records.filter((_, index) => index % step === 0);
+    if (records.length > 0 && sampledRecords[sampledRecords.length - 1] !== records[records.length - 1]) {
+      sampledRecords.push(records[records.length - 1]);
+    }
+  }
+
   const labels = [];
   const hostCpuData = [];
   const hostRamData = [];
   const dockerCpuData = [];
   const dockerRamData = [];
 
-  records.forEach(rec => {
+  sampledRecords.forEach(rec => {
     const dt = new Date(rec.recorded_at);
     const labelStr = currentChartMode === '24h' ? dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : `${dt.getMonth()+1}/${dt.getDate()} ${dt.getHours()}:00`;
 
