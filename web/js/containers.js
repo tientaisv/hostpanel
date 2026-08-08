@@ -1,6 +1,7 @@
 let rawContainersData = [];
 let containersStatsMap = {};
 let containersStatsInterval = null;
+let containerActionInProgress = new Set(); // Track containers with pending actions
 
 async function loadContainers() {
   const tbody = document.getElementById("tbody-containers");
@@ -96,7 +97,26 @@ function renderContainers(list) {
     }
 
     const isRunning = (c.state === "running");
-    const isPaused = (c.state === "paused");
+    const isPaused  = (c.state === "paused");
+    const isStopped = !isRunning && !isPaused;
+    const isBusy    = containerActionInProgress.has(c.id);
+
+    // ---- Independent action buttons always visible ----
+    // Start: enabled only when stopped or paused
+    const startDisabled  = isRunning  || isBusy;
+    const stopDisabled   = isStopped  || isBusy;
+    const restartDisabled = isStopped || isBusy;
+
+    const startTitle   = isRunning ? "Container đang chạy" : "Start Container";
+    const stopTitle    = isStopped ? "Container đã dừng"   : "Stop Container";
+    const restartTitle = isStopped ? "Container đã dừng"   : "Restart Container";
+
+    const loadingSpan  = isBusy ? `<span class="ctr-action-loading" title="Đang xử lý...">⏳</span>` : "";
+
+    const startAction  = isPaused ? 'unpause' : 'start';
+    const onClickStart   = startDisabled  ? '' : `containerAction('${c.id}','${startAction}')`;
+    const onClickStop    = stopDisabled   ? '' : `containerAction('${c.id}','stop')`;
+    const onClickRestart = restartDisabled ? '' : `containerAction('${c.id}','restart')`;
 
     return `
       <tr>
@@ -118,16 +138,29 @@ function renderContainers(list) {
         <td>${ipsHTML}</td>
         <td>
           <div class="action-btns">
-            ${isRunning ? `
-              <button class="btn-icon" onclick="containerAction('${c.id}', 'stop')" title="Stop Container">⏹️</button>
-              <button class="btn-icon" onclick="containerAction('${c.id}', 'restart')" title="Restart Container">🔄</button>
-              <button class="btn-icon" onclick="containerAction('${c.id}', 'pause')" title="Pause Container">⏸️</button>
-              <button class="btn-icon" onclick="openTerminalModal('${c.id}', '${escapeHTML(c.name)}')" title="Terminal Shell">💻</button>
-            ` : isPaused ? `
-              <button class="btn-icon" onclick="containerAction('${c.id}', 'unpause')" title="Unpause Container">▶️</button>
-            ` : `
-              <button class="btn-icon" onclick="containerAction('${c.id}', 'start')" title="Start Container">▶️</button>
-            `}
+            ${loadingSpan}
+
+            <!-- ▶️ Start – luôn hiển thị -->
+            <button class="btn-icon ctr-btn-start${startDisabled ? ' ctr-btn-disabled' : ''}"
+              onclick="${onClickStart}"
+              title="${startTitle}"
+              ${startDisabled ? 'disabled' : ''}>▶️</button>
+
+            <!-- ⏹️ Stop – luôn hiển thị -->
+            <button class="btn-icon ctr-btn-stop${stopDisabled ? ' ctr-btn-disabled' : ''}"
+              onclick="${onClickStop}"
+              title="${stopTitle}"
+              ${stopDisabled ? 'disabled' : ''}>⏹️</button>
+
+            <!-- 🔄 Restart – luôn hiển thị -->
+            <button class="btn-icon ctr-btn-restart${restartDisabled ? ' ctr-btn-disabled' : ''}"
+              onclick="${onClickRestart}"
+              title="${restartTitle}"
+              ${restartDisabled ? 'disabled' : ''}>🔄</button>
+
+            <!-- 💻 Terminal: chỉ khi đang running -->
+            ${isRunning ? `<button class="btn-icon" onclick="openTerminalModal('${c.id}', '${escapeHTML(c.name)}')" title="Terminal Shell">💻</button>` : ''}
+
             <button class="btn-icon" onclick="openLogsModal('${c.id}', '${escapeHTML(c.name)}')" title="View Live Logs">📋</button>
             <button class="btn-icon" style="color: var(--accent-blue);" onclick="diagnoseContainerWithAI('${c.id}', '${escapeHTML(c.name)}')" title="AI Phân tích sự cố">🤖</button>
             <button class="btn-icon" style="color: var(--accent-red);" onclick="removeContainerPrompt('${c.id}', '${escapeHTML(c.name)}')" title="Remove Container">🗑️</button>
@@ -165,7 +198,34 @@ document.getElementById("search-ctrs")?.addEventListener("input", (e) => {
   renderContainers(filtered);
 });
 
+function showContainerToast(msg, type = "info") {
+  // Reuse global toast if available, otherwise show simple notification
+  if (typeof showToast === "function") {
+    showToast(msg, type);
+    return;
+  }
+  const toast = document.createElement("div");
+  toast.textContent = msg;
+  const colors = { success: "#22c55e", error: "#ef4444", info: "#38bdf8", warn: "#f59e0b" };
+  Object.assign(toast.style, {
+    position: "fixed", bottom: "24px", right: "24px", zIndex: 9999,
+    background: colors[type] || colors.info,
+    color: "#fff", padding: "10px 18px", borderRadius: "10px",
+    fontSize: "0.9rem", fontWeight: "600", boxShadow: "0 4px 20px rgba(0,0,0,0.35)",
+    transition: "opacity 0.4s", opacity: "1",
+  });
+  document.body.appendChild(toast);
+  setTimeout(() => { toast.style.opacity = "0"; setTimeout(() => toast.remove(), 450); }, 3000);
+}
+
+const ACTION_LABELS = { start: "Start", stop: "Stop", restart: "Restart", pause: "Pause", unpause: "Unpause" };
+
 async function containerAction(id, action) {
+  if (containerActionInProgress.has(id)) return;
+  containerActionInProgress.add(id);
+  renderContainers(rawContainersData); // re-render to show loading state
+
+  const label = ACTION_LABELS[action] || action;
   try {
     const res = await fetch("/api/containers/action", {
       method: "POST",
@@ -174,12 +234,15 @@ async function containerAction(id, action) {
     });
     if (!res.ok) {
       const err = await res.json();
-      alert(`Lỗi thao tác ${action}: ${err.error}`);
+      showContainerToast(`❌ ${label} thất bại: ${err.error}`, "error");
     } else {
-      loadContainers();
+      showContainerToast(`✅ ${label} thành công!`, "success");
     }
   } catch (e) {
-    alert(`Lỗi hệ thống: ${e.message}`);
+    showContainerToast(`❌ Lỗi hệ thống: ${e.message}`, "error");
+  } finally {
+    containerActionInProgress.delete(id);
+    await loadContainers();
   }
 }
 
@@ -193,12 +256,13 @@ async function removeContainerPrompt(id, name) {
       });
       if (!res.ok) {
         const err = await res.json();
-        alert(`Lỗi xóa container: ${err.error}`);
+        showContainerToast(`❌ Xóa container thất bại: ${err.error}`, "error");
       } else {
+        showContainerToast(`✅ Đã xóa container "${name}"`, "success");
         loadContainers();
       }
     } catch (e) {
-      alert(`Lỗi hệ thống: ${e.message}`);
+      showContainerToast(`❌ Lỗi hệ thống: ${e.message}`, "error");
     }
   }
 }

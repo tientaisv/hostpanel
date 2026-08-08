@@ -87,6 +87,7 @@ func main() {
 	mux.HandleFunc("/api/files/delete", authMiddleware(handleFileDelete))
 	mux.HandleFunc("/api/files/download", authMiddleware(handleFileDownload))
 	mux.HandleFunc("/api/files/upload", authMiddleware(handleFileUpload))
+	mux.HandleFunc("/api/files/disk-usage", authMiddleware(handleFileDiskUsage))
 
 	// Protected WebSocket Endpoints
 	mux.HandleFunc("/ws/logs", authWSMiddleware(handleWSLogs))
@@ -928,4 +929,25 @@ func handleFileUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonResponse(w, 200, map[string]string{"status": "uploaded", "path": destPath})
+}
+
+func handleFileDiskUsage(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		path = "/"
+	}
+	topStr := r.URL.Query().Get("top")
+	topN := 15
+	if topStr != "" {
+		if val, err := strconv.Atoi(topStr); err == nil && val > 0 {
+			topN = val
+		}
+	}
+
+	summary, err := system.GetFolderDiskUsage(path, topN)
+	if err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, 200, summary)
 }

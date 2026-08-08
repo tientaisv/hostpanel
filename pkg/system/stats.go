@@ -337,6 +337,10 @@ func ResetSwap() (string, error) {
 		return "", fmt.Errorf("Đã giải phóng Swap nhưng gặp lỗi khi bật lại Swap (swapon -a): %v (%s)", errOn, strings.TrimSpace(string(outOn)))
 	}
 
+	// 4. Restart zram services if present to ensure zram swap partitions are re-enabled
+	_ = exec.Command("systemctl", "restart", "zram-config").Run()
+	_ = exec.Command("systemctl", "restart", "zramswap").Run()
+
 	return fmt.Sprintf("Reset Swap thành công! Đã chuyển %d MB từ Swap trở lại RAM.", swapUsedMB), nil
 }
 
