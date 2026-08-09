@@ -440,14 +440,14 @@ Bạn có thể bấm nút "🛡️ System Health AI Audit" ở trên để tôi
             </select>
             <button class="btn btn-primary" onclick="loadDiskUsageAnalyzer(undefined, undefined, true)" style="padding: 6px 14px; font-size: 0.85rem;">🔍 Quét Dung Lượng</button>
             <button id="btn-toggle-hdd-analyzer" class="btn btn-secondary" onclick="toggleHddAnalyzer()" style="padding: 6px 14px; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 6px;" title="Ẩn hoặc Hiển thị bảng phân tích dung lượng">
-              <span id="hdd-analyzer-toggle-icon">🙈</span>
-              <span id="hdd-analyzer-toggle-text">Ẩn Analyzer</span>
+              <span id="hdd-analyzer-toggle-icon">👁️</span>
+              <span id="hdd-analyzer-toggle-text">Hiện Analyzer</span>
             </button>
           </div>
         </div>
 
         <!-- Collapsible Body -->
-        <div id="hdd-analyzer-body" style="margin-top: 20px; transition: all 0.3s ease;">
+        <div id="hdd-analyzer-body" style="display: none; margin-top: 20px; transition: all 0.3s ease;">
           <!-- Quick Summary Metrics -->
           <div class="grid-metrics" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px;">
             <div class="metric-card" style="padding: 12px 16px;">

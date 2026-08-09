@@ -10,11 +10,6 @@ async function loadFiles(dirPath) {
   const breadcrumbEl = document.getElementById("file-breadcrumbs");
   if (!tbody) return;
 
-  // Auto trigger disk analyzer on first open if not loaded yet
-  if (!diskBarChart && document.getElementById("chart-disk-bar")) {
-    loadDiskUsageAnalyzer(currentDirPath, 15);
-  }
-
   tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">⏳ Đang tải danh sách tệp tại <code>${escapeHtml(currentDirPath)}</code>...</td></tr>`;
 
   try {
@@ -403,6 +398,11 @@ function toggleHddAnalyzer(show) {
     if (icon) icon.textContent = "🙈";
     if (text) text.textContent = "Ẩn Analyzer";
     localStorage.setItem("hdd_analyzer_hidden", "false");
+
+    if (!diskBarChart && document.getElementById("chart-disk-bar")) {
+      loadDiskUsageAnalyzer(currentDirPath, 15);
+    }
+
     setTimeout(() => {
       if (diskBarChart) diskBarChart.resize();
       if (diskPieChart) diskPieChart.resize();
@@ -416,8 +416,10 @@ function toggleHddAnalyzer(show) {
 }
 
 function initHddAnalyzerToggle() {
-  const isHidden = localStorage.getItem("hdd_analyzer_hidden") === "true";
-  if (isHidden) {
+  const isExplicitlyShown = localStorage.getItem("hdd_analyzer_hidden") === "false";
+  if (isExplicitlyShown) {
+    toggleHddAnalyzer(true);
+  } else {
     toggleHddAnalyzer(false);
   }
 }
