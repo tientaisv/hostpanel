@@ -10,56 +10,80 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      height: 100vh;
+      min-height: 100vh;
+      background: radial-gradient(circle at center, #0f172a 0%, #070a11 100%);
+      padding: 20px;
     }
     .login-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
-      padding: 40px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(16px);
+      border-radius: var(--radius-xl);
+      padding: 40px 36px;
       width: 100%;
-      max-width: 400px;
+      max-width: 420px;
       display: flex;
       flex-direction: column;
-      gap: 24px;
+      gap: 22px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+      animation: modalScaleUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .login-brand {
       display: flex;
       align-items: center;
-      gap: 14px;
-      font-size: 1.5rem;
-      font-weight: 700;
+      gap: 12px;
       justify-content: center;
+    }
+    .login-brand-icon {
+      width: 42px;
+      height: 42px;
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.35rem;
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);
+    }
+    .login-brand-title {
+      font-size: 1.6rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      background: linear-gradient(to right, #ffffff, #93c5fd);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
     }
     .form-group {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 6px;
     }
     .form-label {
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       font-weight: 600;
-      color: var(--text-muted);
+      color: var(--text-secondary);
     }
     .form-input {
-      background: #0d1117;
+      background: #090e18;
       border: 1px solid var(--border-color);
-      border-radius: 6px;
-      padding: 10px 14px;
+      border-radius: var(--radius-md);
+      padding: 11px 16px;
       color: var(--text-main);
       font-size: 0.95rem;
+      font-family: var(--font-main);
       outline: none;
-      transition: border-color 0.15s ease;
+      transition: all 0.18s ease;
     }
     .form-input:focus {
-      border-color: var(--accent-blue-light);
+      border-color: var(--accent-cyan-light);
+      box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
     }
     .error-msg {
-      color: #f85149;
-      background: #2d1517;
-      border: 1px solid #5d1d24;
-      padding: 8px 12px;
-      border-radius: 6px;
+      color: #f87171;
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      padding: 10px 14px;
+      border-radius: var(--radius-md);
       font-size: 0.85rem;
       text-align: center;
       display: none;
@@ -70,10 +94,12 @@
 
   <div class="login-card">
     <div class="login-brand">
-      <div class="brand-icon">⚡</div>
-      <div>DockPulse</div>
+      <div class="login-brand-icon">⚡</div>
+      <div class="login-brand-title">DockPulse</div>
     </div>
-    <div style="text-align: center; color: var(--text-muted); font-size: 0.9rem;">Xác thực tài khoản để truy cập Server Control Hub</div>
+    <div style="text-align: center; color: var(--text-muted); font-size: 0.88rem; margin-top: -8px;">
+      Xác thực tài khoản để truy cập Server Control Hub
+    </div>
 
     <div class="error-msg" id="error-msg"></div>
 
@@ -88,7 +114,9 @@
         <input type="password" id="password" class="form-input" placeholder="••••••••" required>
       </div>
 
-      <button type="submit" class="btn btn-primary" style="padding: 12px; justify-content: center; margin-top: 8px; font-size: 0.95rem;">🔒 Đăng Nhập</button>
+      <button type="submit" class="btn btn-primary" style="padding: 12px; justify-content: center; margin-top: 6px; font-size: 0.95rem; font-weight: 700;">
+        🔒 Đăng Nhập
+      </button>
     </form>
   </div>
 
