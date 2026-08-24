@@ -1,7 +1,7 @@
 [Unit]
-Description=DockPulse - Ultra Lightweight Docker & Compose Manager
-After=network-online.target docker.service
-Wants=docker.service network-online.target
+Description=DockPulse - Ultra Lightweight Docker & Podman Compose Manager
+After=network-online.target podman.socket podman.service docker.service
+Wants=network-online.target podman.socket docker.service
 
 [Service]
 Type=simple
@@ -15,4 +15,3 @@ Environment=PORT=3800
 
 [Install]
 WantedBy=multi-user.target
-

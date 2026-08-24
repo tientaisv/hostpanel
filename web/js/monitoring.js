@@ -238,7 +238,32 @@ function updateDashboardUI(data) {
     }
   }
 
-  // Total Docker Engine Resource Consumption
+  // Dynamic Container Engine (Podman vs Docker) presentation
+  const isPodman = data.is_podman !== undefined ? data.is_podman : true;
+  const engineName = data.engine_name || (isPodman ? "Podman" : "Docker");
+  const engineVersion = data.engine_version ? ` v${data.engine_version}` : "";
+  const engineIcon = isPodman ? "🦭" : "🐳";
+
+  if (document.getElementById("engine-badge-text")) {
+    document.getElementById("engine-badge-text").textContent = `${engineName}${engineVersion}`;
+  }
+  if (document.getElementById("engine-badge-icon")) {
+    document.getElementById("engine-badge-icon").textContent = engineIcon;
+  }
+  if (document.getElementById("nav-engine-category")) {
+    document.getElementById("nav-engine-category").textContent = `${engineName.toUpperCase()} ENGINE`;
+  }
+  if (document.getElementById("card-engine-ctrs-title")) {
+    document.getElementById("card-engine-ctrs-title").textContent = `${engineName} Containers`;
+  }
+  if (document.getElementById("card-engine-ctrs-icon")) {
+    document.getElementById("card-engine-ctrs-icon").textContent = engineIcon;
+  }
+  if (document.getElementById("engine-pool-title")) {
+    document.getElementById("engine-pool-title").innerHTML = `<span>${engineIcon}</span> Tổng Tài Nguyên ${engineName} Engine Đang Sử Dụng`;
+  }
+
+  // Total Container Engine Resource Consumption
   if (document.getElementById("docker-total-running-badge")) {
     document.getElementById("docker-total-running-badge").textContent = `${data.docker_running_count || 0} / ${data.containers_count || 0} Running Containers`;
   }
@@ -453,6 +478,105 @@ async function executeResetSwap() {
     if (btnConfirm) {
       btnConfirm.disabled = false;
       btnConfirm.textContent = "⚡ Xác Nhận Reset Swap";
+    }
+  }
+}
+
+function triggerPwmConfigModal() {
+  const channelInput = document.getElementById("pwm-channel-input");
+  const speedInput = document.getElementById("pwm-speed-input");
+  const statusMsg = document.getElementById("pwm-status-msg");
+  const btnConfirm = document.getElementById("btn-confirm-pwm");
+
+  if (channelInput) channelInput.value = 0;
+  if (speedInput) speedInput.value = 255;
+  if (statusMsg) {
+    statusMsg.style.display = "none";
+    statusMsg.textContent = "";
+  }
+  if (btnConfirm) {
+    btnConfirm.disabled = false;
+    btnConfirm.innerHTML = '<span>⚡</span> Chạy Lệnh PWM (255 Max)';
+  }
+  updatePwmCmdPreview();
+
+  const modal = document.getElementById("modal-pwmconfig");
+  if (modal) modal.classList.add("active");
+}
+
+function updatePwmCmdPreview() {
+  const c = document.getElementById("pwm-channel-input")?.value || 0;
+  const s = document.getElementById("pwm-speed-input")?.value || 255;
+  const preview = document.getElementById("pwm-preview-cmd");
+  if (preview) {
+    preview.textContent = `pwmconfig -c ${c} -s ${s}`;
+  }
+}
+
+async function executePwmConfig() {
+  const btnConfirm = document.getElementById("btn-confirm-pwm");
+  const statusMsg = document.getElementById("pwm-status-msg");
+  const channel = parseInt(document.getElementById("pwm-channel-input")?.value || "0", 10);
+  const speed = parseInt(document.getElementById("pwm-speed-input")?.value || "255", 10);
+
+  if (btnConfirm) {
+    btnConfirm.disabled = true;
+    btnConfirm.innerHTML = '⏳ Đang thực thi pwmconfig...';
+  }
+
+  if (statusMsg) {
+    statusMsg.style.display = "block";
+    statusMsg.style.background = "rgba(56, 189, 248, 0.15)";
+    statusMsg.style.color = "#38bdf8";
+    statusMsg.style.border = "1px solid rgba(56, 189, 248, 0.3)";
+    statusMsg.textContent = `Đang chạy: pwmconfig -c ${channel} -s ${speed} ...`;
+  }
+
+  try {
+    const res = await fetch("/api/system/pwmconfig", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channel: channel, speed: speed })
+    });
+    const data = await res.json();
+
+    if (res.ok) {
+      if (statusMsg) {
+        statusMsg.style.background = "rgba(52, 211, 153, 0.15)";
+        statusMsg.style.color = "#34d399";
+        statusMsg.style.border = "1px solid rgba(52, 211, 153, 0.3)";
+        statusMsg.textContent = `✅ Thành công!\n${data.message || ""}`;
+      }
+      if (btnConfirm) {
+        btnConfirm.disabled = false;
+        btnConfirm.innerHTML = '<span>⚡</span> Chạy Lại Lệnh PWM';
+      }
+    } else {
+      if (statusMsg) {
+        statusMsg.style.background = "rgba(248, 113, 113, 0.15)";
+        statusMsg.style.color = "#f87171";
+        statusMsg.style.border = "1px solid rgba(248, 113, 113, 0.3)";
+        let errText = `❌ Lỗi khi thực thi:\n${data.error || "Thực thi thất bại"}`;
+        if (data.output && data.output !== data.error) {
+          errText += `\n${data.output}`;
+        }
+        statusMsg.textContent = errText;
+      }
+      if (btnConfirm) {
+        btnConfirm.disabled = false;
+        btnConfirm.innerHTML = '<span>⚡</span> Thử Lại';
+      }
+    }
+  } catch (err) {
+    if (statusMsg) {
+      statusMsg.style.background = "rgba(248, 113, 113, 0.15)";
+      statusMsg.style.color = "#f87171";
+      statusMsg.style.border = "1px solid rgba(248, 113, 113, 0.3)";
+      statusMsg.textContent = `❌ Lỗi kết nối server: ${err.message}`;
+    }
+    if (btnConfirm) {
+      btnConfirm.disabled = false;
+      btnConfirm.innerHTML = '<span>⚡</span> Thử Lại';
     }
   }
 }

@@ -147,15 +147,29 @@ func auditAuthLogs(report *SecurityReport) {
 }
 
 func auditDockerSecurity(report *SecurityReport) {
-	// Inspect running container configs via docker socket or inspection
-	out, err := exec.Command("docker", "ps", "-q").Output()
+	// Inspect running container configs via podman or docker CLI
+	var out []byte
+	var err error
+	cliName := "podman"
+	out, err = exec.Command("podman", "ps", "-q").Output()
+	if err != nil || len(out) == 0 {
+		cliName = "docker"
+		out, err = exec.Command("docker", "ps", "-q").Output()
+	}
 	if err != nil || len(out) == 0 {
 		return
 	}
 
+	categoryName := "Container Security"
+	if cliName == "podman" {
+		categoryName = "Podman Security"
+	} else {
+		categoryName = "Docker Security"
+	}
+
 	containerIDs := strings.Fields(string(out))
 	for _, id := range containerIDs {
-		inspectOut, errInsp := exec.Command("docker", "inspect", id).Output()
+		inspectOut, errInsp := exec.Command(cliName, "inspect", id).Output()
 		if errInsp != nil {
 			continue
 		}
@@ -167,7 +181,7 @@ func auditDockerSecurity(report *SecurityReport) {
 			report.ThreatScore += 15
 			report.Threats = append(report.Threats, SecurityThreatItem{
 				Level:       "WARNING",
-				Category:    "Docker Security",
+				Category:    categoryName,
 				Title:       fmt.Sprintf("Container %s đang chạy với quyền --privileged", id[:12]),
 				Description: "Container chạy chế độ Privileged có thể truy cập trực tiếp Kernel Host Server.",
 				ActionHint:  "Tắt cờ --privileged và chỉ bổ sung cap-add cụ thể nếu cần",
@@ -175,14 +189,14 @@ func auditDockerSecurity(report *SecurityReport) {
 		}
 
 		// Check dangerous host socket / root mounts
-		if strings.Contains(inspectStr, "/var/run/docker.sock") {
+		if strings.Contains(inspectStr, "/var/run/docker.sock") || strings.Contains(inspectStr, "/run/podman/podman.sock") {
 			report.ThreatScore += 10
 			report.Threats = append(report.Threats, SecurityThreatItem{
 				Level:       "WARNING",
-				Category:    "Docker Security",
-				Title:       fmt.Sprintf("Container %s mount trực tiếp Docker Socket", id[:12]),
-				Description: "Container mount docker.sock có quyền kiểm soát toàn bộ Docker Daemon trên Server.",
-				ActionHint:  "Sử dụng Docker API Proxy giới hạn quyền nếu không bắt buộc",
+				Category:    categoryName,
+				Title:       fmt.Sprintf("Container %s mount trực tiếp Socket máy chủ", id[:12]),
+				Description: "Container mount container socket có quyền kiểm soát toàn bộ Container Engine trên Server.",
+				ActionHint:  "Sử dụng API Proxy giới hạn quyền nếu không bắt buộc",
 			})
 		}
 	}

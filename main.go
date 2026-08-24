@@ -23,7 +23,11 @@ import (
 var client *docker.Client
 
 func main() {
-	client = docker.NewClient("/var/run/docker.sock")
+	client = docker.NewClient("")
+	engine := client.GetEngineInfo()
+	log.Printf("🚀 Container Engine detected: %s (Version: %s, API: %s, Socket: %s, IsPodman: %t)\n",
+		engine.Name, engine.Version, engine.APIVersion, engine.SocketPath, engine.IsPodman)
+
 	metrics.InitLogger(client)
 	ai.InitRotater(".env", "/root/hostcontrol/.env", "/home/data/appck/.env", "/home/data/taissh/.env")
 	auth.InitAuth("config.json")
@@ -43,6 +47,7 @@ func main() {
 
 	// Protected REST Endpoints
 	mux.HandleFunc("/api/host", authMiddleware(handleHostStats))
+	mux.HandleFunc("/api/engine/info", authMiddleware(handleEngineInfo))
 	mux.HandleFunc("/api/containers", authMiddleware(handleContainers))
 	mux.HandleFunc("/api/containers/action", authMiddleware(handleContainerAction))
 	mux.HandleFunc("/api/containers/remove", authMiddleware(handleContainerRemove))
@@ -68,6 +73,7 @@ func main() {
 	mux.HandleFunc("/api/system/security", authMiddleware(handleSecurityAudit))
 	mux.HandleFunc("/api/system/security/block-ip", authMiddleware(handleBlockIP))
 	mux.HandleFunc("/api/system/swap/reset", authMiddleware(handleResetSwap))
+	mux.HandleFunc("/api/system/pwmconfig", authMiddleware(handlePwmConfig))
 
 	mux.HandleFunc("/api/ai/diagnose", authMiddleware(handleAIDiagnose))
 	mux.HandleFunc("/api/ai/audit", authMiddleware(handleAIAudit))
@@ -198,10 +204,21 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func handleAuthCheck(w http.ResponseWriter, r *http.Request) {
 	if auth.GlobalAuth.ValidateRequest(r) {
-		jsonResponse(w, 200, map[string]string{"status": "authenticated", "user": auth.GlobalAuth.Config.AdminUser})
+		engine := client.GetEngineInfo()
+		jsonResponse(w, 200, map[string]interface{}{
+			"status":         "authenticated",
+			"user":           auth.GlobalAuth.Config.AdminUser,
+			"engine_name":    engine.Name,
+			"engine_version": engine.Version,
+			"is_podman":      engine.IsPodman,
+		})
 		return
 	}
 	jsonResponse(w, 401, map[string]string{"status": "unauthenticated"})
+}
+
+func handleEngineInfo(w http.ResponseWriter, r *http.Request) {
+	jsonResponse(w, 200, client.GetEngineInfo())
 }
 
 func handleHostStats(w http.ResponseWriter, r *http.Request) {
@@ -210,6 +227,12 @@ func handleHostStats(w http.ResponseWriter, r *http.Request) {
 		jsonResponse(w, 500, map[string]string{"error": err.Error()})
 		return
 	}
+
+	engine := client.GetEngineInfo()
+	stats.EngineName = engine.Name
+	stats.EngineVersion = engine.Version
+	stats.IsPodman = engine.IsPodman
+
 	if summary, errSum := client.GetTotalDockerStats(stats.MemTotalMB); errSum == nil && summary != nil {
 		stats.Containers = summary.TotalContainers
 		stats.DockerRunningCount = summary.RunningContainers
@@ -515,6 +538,34 @@ func handleResetSwap(w http.ResponseWriter, r *http.Request) {
 	msg, err := system.ResetSwap()
 	if err != nil {
 		jsonResponse(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, 200, map[string]string{"status": "ok", "message": msg})
+}
+
+func handlePwmConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	var req struct {
+		Channel *int `json:"channel"`
+		Speed   *int `json:"speed"`
+	}
+	channel := 0
+	speed := 255
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req.Channel != nil {
+			channel = *req.Channel
+		}
+		if req.Speed != nil {
+			speed = *req.Speed
+		}
+	}
+	msg, err := system.RunPwmConfig(channel, speed)
+	if err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error(), "output": msg})
 		return
 	}
 	jsonResponse(w, 200, map[string]string{"status": "ok", "message": msg})

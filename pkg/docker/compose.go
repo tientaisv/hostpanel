@@ -20,6 +20,7 @@ type ComposeService struct {
 	MemPercent float64 `json:"mem_percent"`
 	NetRxMB    float64 `json:"net_rx_mb"`
 	NetTxMB    float64 `json:"net_tx_mb"`
+	Engine     string  `json:"engine"` // "podman" or "docker"
 }
 
 type ComposeStack struct {
@@ -34,6 +35,7 @@ type ComposeStack struct {
 	TotalMemPercent float64          `json:"total_mem_percent"`
 	TotalNetRxMB    float64          `json:"total_net_rx_mb"`
 	TotalNetTxMB    float64          `json:"total_net_tx_mb"`
+	Engine          string           `json:"engine"` // "podman" or "docker"
 }
 
 func (c *Client) ListComposeStacks() ([]ComposeStack, error) {
@@ -56,20 +58,29 @@ func (c *Client) ListComposeStacksWithStats(includeStats bool) ([]ComposeStack, 
 	for _, ctr := range containers {
 		proj := ctr.Project
 		if proj == "" {
-			// Skip containers not belonging to a Compose project
+			// Skip containers not belonging to a Compose project or Pod
 			continue
 		}
 
-		stack, exists := stacksMap[proj]
+		stackKey := fmt.Sprintf("%s|%s", proj, ctr.Engine)
+		stack, exists := stacksMap[stackKey]
 		if !exists {
 			stack = &ComposeStack{
 				Project:  proj,
 				Services: make([]ComposeService, 0),
+				Engine:   ctr.Engine,
 			}
-			stacksMap[proj] = stack
+			stacksMap[stackKey] = stack
 		}
 
-		srvName := ctr.Labels["com.docker.compose.service"]
+		srvName := ""
+		if ctr.Labels != nil {
+			if s, ok := ctr.Labels["com.docker.compose.service"]; ok && s != "" {
+				srvName = s
+			} else if s, ok := ctr.Labels["io.podman.compose.service"]; ok && s != "" {
+				srvName = s
+			}
+		}
 		if srvName == "" {
 			srvName = ctr.Name
 		}
@@ -89,10 +100,20 @@ func (c *Client) ListComposeStacksWithStats(includeStats bool) ([]ComposeStack, 
 			Status:   ctr.Status,
 			Image:    ctr.Image,
 			PortsStr: portsStr,
+			Engine:   ctr.Engine,
 		}
 
 		if includeStats && allStats != nil {
-			if st, ok := allStats[ctr.ID]; ok && st != nil {
+			var st *system.ContainerStats
+			if s, ok := allStats[ctr.ID]; ok && s != nil {
+				st = s
+			} else if s, ok := allStats[ctr.ShortID]; ok && s != nil {
+				st = s
+			} else if s, ok := allStats[ctr.Name]; ok && s != nil {
+				st = s
+			}
+
+			if st != nil {
 				service.CPUPercent = st.CPUPercent
 				service.MemUsageMB = st.MemUsageMB
 				service.MemLimitMB = st.MemLimitMB
@@ -119,7 +140,7 @@ func (c *Client) ListComposeStacksWithStats(includeStats bool) ([]ComposeStack, 
 
 	result := make([]ComposeStack, 0)
 	for _, stack := range stacksMap {
-		if stack.RunningCount == stack.Total {
+		if stack.RunningCount == stack.Total && stack.Total > 0 {
 			stack.State = "running"
 		} else if stack.RunningCount > 0 {
 			stack.State = "partial"
@@ -153,14 +174,18 @@ func (c *Client) StackAction(project string, action string) error {
 		return err
 	}
 
+	found := false
 	for _, s := range stacks {
-		if s.Project == project {
+		if s.Project == project || fmt.Sprintf("%s|%s", s.Project, s.Engine) == project {
+			found = true
 			for _, srv := range s.Services {
 				_ = c.ContainerAction(srv.ID, action)
 			}
-			return nil
 		}
 	}
 
+	if found {
+		return nil
+	}
 	return fmt.Errorf("stack %s not found", project)
 }

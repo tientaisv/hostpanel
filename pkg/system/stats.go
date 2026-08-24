@@ -2,6 +2,7 @@ package system
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -10,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -55,6 +57,9 @@ type HostStats struct {
 	DockerMemPercent   float64       `json:"docker_mem_percent"`
 	DockerNetRxMB      float64       `json:"docker_net_rx_mb"`
 	DockerNetTxMB      float64       `json:"docker_net_tx_mb"`
+	EngineName         string        `json:"engine_name"`
+	EngineVersion      string        `json:"engine_version"`
+	IsPodman           bool          `json:"is_podman"`
 }
 
 type ContainerStats struct {
@@ -344,6 +349,30 @@ func ResetSwap() (string, error) {
 	return fmt.Sprintf("Reset Swap thành công! Đã chuyển %d MB từ Swap trở lại RAM.", swapUsedMB), nil
 }
 
+func RunPwmConfig(channel int, speed int) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "pwmconfig", "-c", strconv.Itoa(channel), "-s", strconv.Itoa(speed))
+	out, err := cmd.CombinedOutput()
+	outStr := strings.TrimSpace(string(out))
+
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return outStr, fmt.Errorf("Lệnh thực thi bị quá thời gian (timeout 15s)")
+		}
+		if outStr != "" {
+			return outStr, fmt.Errorf("%s", outStr)
+		}
+		return "", err
+	}
+
+	if outStr == "" {
+		outStr = fmt.Sprintf("Lệnh 'pwmconfig -c %d -s %d' đã thực thi thành công.", channel, speed)
+	}
+	return outStr, nil
+}
+
 func readMemAndSwapStats() (uint64, uint64, uint64, uint64, uint64, uint64) {
 	file, err := os.Open("/proc/meminfo")
 	if err != nil {
@@ -438,27 +467,54 @@ func readDiskIOStats() (float64, float64) {
 }
 
 type RawDockerStats struct {
+	ID       string `json:"Id"`
+	Name     string `json:"Name"`
 	CPUStats struct {
 		CPUUsage struct {
-			TotalUsage uint64 `json:"total_usage"`
+			TotalUsage  uint64   `json:"total_usage"`
+			PercpuUsage []uint64 `json:"percpu_usage"`
 		} `json:"cpu_usage"`
 		SystemCPUUsage uint64 `json:"system_cpu_usage"`
+		OnlineCPUs     int    `json:"online_cpus"`
 	} `json:"cpu_stats"`
 	PreCPUStats struct {
 		CPUUsage struct {
-			TotalUsage uint64 `json:"total_usage"`
+			TotalUsage  uint64   `json:"total_usage"`
+			PercpuUsage []uint64 `json:"percpu_usage"`
 		} `json:"cpu_usage"`
 		SystemCPUUsage uint64 `json:"system_cpu_usage"`
+		OnlineCPUs     int    `json:"online_cpus"`
 	} `json:"precpu_stats"`
 	MemoryStats struct {
 		Usage uint64 `json:"usage"`
 		Limit uint64 `json:"limit"`
+		Stats struct {
+			InactiveFile uint64 `json:"inactive_file"`
+			Cache        uint64 `json:"cache"`
+		} `json:"stats"`
 	} `json:"memory_stats"`
 	Networks map[string]struct {
 		RxBytes uint64 `json:"rx_bytes"`
 		TxBytes uint64 `json:"tx_bytes"`
 	} `json:"networks"`
+	BlkioStats struct {
+		IOServiceBytesRecursive []struct {
+			Op    string `json:"op"`
+			Value uint64 `json:"value"`
+		} `json:"io_service_bytes_recursive"`
+	} `json:"blkio_stats"`
 }
+
+type containerCPUSample struct {
+	totalUsage  uint64
+	systemUsage uint64
+	recordedAt  time.Time
+}
+
+var (
+	containerCPUMap = make(map[string]containerCPUSample)
+	containerCPUMu  = &sync.Mutex{}
+)
 
 func ParseDockerStats(body []byte) (*ContainerStats, error) {
 	var raw RawDockerStats
@@ -468,18 +524,75 @@ func ParseDockerStats(body []byte) (*ContainerStats, error) {
 
 	cs := &ContainerStats{}
 
-	cpuDelta := float64(raw.CPUStats.CPUUsage.TotalUsage - raw.PreCPUStats.CPUUsage.TotalUsage)
-	systemDelta := float64(raw.CPUStats.SystemCPUUsage - raw.PreCPUStats.SystemCPUUsage)
-	if systemDelta > 0 && cpuDelta > 0 {
-		cs.CPUPercent = (cpuDelta / systemDelta) * 100.0
+	// Online CPUs count
+	numCPUs := raw.CPUStats.OnlineCPUs
+	if numCPUs <= 0 {
+		numCPUs = len(raw.CPUStats.CPUUsage.PercpuUsage)
+	}
+	if numCPUs <= 0 {
+		numCPUs = runtime.NumCPU()
+	}
+	if numCPUs <= 0 {
+		numCPUs = 1
 	}
 
-	cs.MemUsageMB = float64(raw.MemoryStats.Usage) / (1024 * 1024)
+	now := time.Now()
+	containerID := raw.ID
+	if containerID == "" {
+		containerID = raw.Name
+	}
+
+	containerCPUMu.Lock()
+	lastSample, hasLast := containerCPUMap[containerID]
+	containerCPUMap[containerID] = containerCPUSample{
+		totalUsage:  raw.CPUStats.CPUUsage.TotalUsage,
+		systemUsage: raw.CPUStats.SystemCPUUsage,
+		recordedAt:  now,
+	}
+	containerCPUMu.Unlock()
+
+	// CPU Delta calculation
+	var cpuDelta, systemDelta float64
+	if raw.PreCPUStats.CPUUsage.TotalUsage > 0 && raw.PreCPUStats.SystemCPUUsage > 0 {
+		cpuDelta = float64(raw.CPUStats.CPUUsage.TotalUsage - raw.PreCPUStats.CPUUsage.TotalUsage)
+		systemDelta = float64(raw.CPUStats.SystemCPUUsage - raw.PreCPUStats.SystemCPUUsage)
+	} else if hasLast {
+		if raw.CPUStats.CPUUsage.TotalUsage >= lastSample.totalUsage {
+			cpuDelta = float64(raw.CPUStats.CPUUsage.TotalUsage - lastSample.totalUsage)
+		}
+		if raw.CPUStats.SystemCPUUsage > lastSample.systemUsage {
+			systemDelta = float64(raw.CPUStats.SystemCPUUsage - lastSample.systemUsage)
+		} else {
+			// Fallback to elapsed wall-clock nanoseconds
+			elapsedNs := now.Sub(lastSample.recordedAt).Nanoseconds()
+			if elapsedNs > 0 {
+				systemDelta = float64(elapsedNs)
+			}
+		}
+	}
+
+	if systemDelta > 0 && cpuDelta > 0 {
+		cs.CPUPercent = (cpuDelta / systemDelta) * float64(numCPUs) * 100.0
+		if cs.CPUPercent < 0 {
+			cs.CPUPercent = 0
+		}
+	}
+
+	// Memory Stats
+	memUsage := raw.MemoryStats.Usage
+	if raw.MemoryStats.Stats.InactiveFile > 0 && memUsage > raw.MemoryStats.Stats.InactiveFile {
+		memUsage -= raw.MemoryStats.Stats.InactiveFile
+	}
+	cs.MemUsageMB = float64(memUsage) / (1024 * 1024)
 	cs.MemLimitMB = float64(raw.MemoryStats.Limit) / (1024 * 1024)
 	if raw.MemoryStats.Limit > 0 {
-		cs.MemPercent = (float64(raw.MemoryStats.Usage) / float64(raw.MemoryStats.Limit)) * 100.0
+		cs.MemPercent = (float64(memUsage) / float64(raw.MemoryStats.Limit)) * 100.0
+		if cs.MemPercent > 100.0 {
+			cs.MemPercent = 100.0
+		}
 	}
 
+	// Network I/O
 	var totalRx, totalTx uint64
 	for _, n := range raw.Networks {
 		totalRx += n.RxBytes
@@ -488,5 +601,16 @@ func ParseDockerStats(body []byte) (*ContainerStats, error) {
 	cs.NetRxMB = float64(totalRx) / (1024 * 1024)
 	cs.NetTxMB = float64(totalTx) / (1024 * 1024)
 
+	// Block I/O
+	for _, ioItem := range raw.BlkioStats.IOServiceBytesRecursive {
+		op := strings.ToLower(ioItem.Op)
+		if strings.Contains(op, "read") {
+			cs.BlockReadMB += float64(ioItem.Value) / (1024 * 1024)
+		} else if strings.Contains(op, "write") {
+			cs.BlockWriteMB += float64(ioItem.Value) / (1024 * 1024)
+		}
+	}
+
 	return cs, nil
 }
+

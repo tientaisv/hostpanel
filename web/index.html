@@ -39,9 +39,9 @@
       </ul>
     </div>
 
-    <!-- CATEGORY 2: DOCKER ENGINE -->
+    <!-- CATEGORY 2: CONTAINER ENGINE -->
     <div class="nav-group">
-      <div class="nav-category">DOCKER ENGINE</div>
+      <div class="nav-category" id="nav-engine-category">CONTAINER ENGINE</div>
       <ul class="nav-list">
         <li class="nav-item" data-target="containers">
           <span class="nav-icon">📦</span>
@@ -112,9 +112,12 @@
     <header class="header">
       <div class="header-left">
         <h1 class="page-title" id="page-title">Dashboard</h1>
-        <p class="page-subtitle">Giám sát tài nguyên thời gian thực và quản lý Docker & Server Host</p>
+        <p class="page-subtitle" id="page-subtitle">Giám sát tài nguyên thời gian thực và quản lý Containers & Server Host</p>
       </div>
-      <div class="header-right">
+      <div class="header-right" style="display: flex; align-items: center; gap: 8px;">
+        <div class="status-badge" id="engine-badge" style="background: rgba(137, 87, 229, 0.15); border-color: rgba(137, 87, 229, 0.35); color: #c084fc;">
+          <span id="engine-badge-icon">🦭</span> <span id="engine-badge-text">Podman Engine</span>
+        </div>
         <div class="status-badge">
           <div class="pulse-dot"></div> Connected
         </div>
@@ -159,19 +162,19 @@
 
         <div class="metric-card">
           <div class="metric-header">
-            <span>Docker Containers</span>
-            <span class="metric-icon">🐳</span>
+            <span id="card-engine-ctrs-title">Containers</span>
+            <span class="metric-icon" id="card-engine-ctrs-icon">📦</span>
           </div>
           <div class="metric-value" id="host-ctrs" style="color: var(--accent-cyan-light);">0</div>
           <div class="metric-subtext" id="docker-total-running-badge">0 Running Containers</div>
         </div>
       </div>
 
-      <!-- DOCKER ENGINE RESOURCE POOL -->
+      <!-- CONTAINER ENGINE RESOURCE POOL -->
       <div class="data-card" style="margin-bottom: 24px;">
         <div class="card-header">
-          <div class="card-title">
-            <span>🐳</span> Tổng Tài Nguyên Docker Engine Đang Sử Dụng
+          <div class="card-title" id="engine-pool-title">
+            <span id="engine-pool-icon">🦭</span> Tổng Tài Nguyên Container Engine Đang Sử Dụng
           </div>
         </div>
         <div class="card-body">
@@ -221,9 +224,14 @@
           <div class="card-title">
             <span>🖥️</span> Thông Tin Server & Cấu Hình Phần Cứng
           </div>
-          <button class="btn btn-secondary" onclick="triggerResetSwapModal()" style="padding: 6px 12px; font-size: 0.82rem; background: rgba(245, 158, 11, 0.12); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3);">
-            <span>🧹</span> Reset Swap Memory
-          </button>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-secondary" onclick="triggerPwmConfigModal()" title="Chạy lệnh pwmconfig -c 0 -s 255 (Tăng tốc quạt tối đa)" style="padding: 6px 12px; font-size: 0.82rem; background: rgba(56, 189, 248, 0.12); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">
+              <span>🌪️</span> Max Quạt (PWM 255)
+            </button>
+            <button class="btn btn-secondary" onclick="triggerResetSwapModal()" style="padding: 6px 12px; font-size: 0.82rem; background: rgba(245, 158, 11, 0.12); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3);">
+              <span>🧹</span> Reset Swap Memory
+            </button>
+          </div>
         </div>
 
         <div class="card-body">
@@ -302,7 +310,13 @@
           <h3 style="font-size: 1.15rem; font-weight: 700;">🧩 Docker Compose Projects & Stack Monitoring</h3>
           <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 2px;">Giám sát mức tiêu thụ tài nguyên (CPU, RAM, Network) theo từng Stack và Service</p>
         </div>
-        <div style="display: flex; gap: 10px; align-items: center;">
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <select id="compose-sort" class="search-box" style="width: 210px; padding: 6px 12px; font-size: 0.85rem;" onchange="applyComposeSort()">
+            <option value="cpu" selected>⚡ Sắp xếp theo % CPU</option>
+            <option value="ram">🧠 Sắp xếp theo RAM (MB)</option>
+            <option value="name">🔤 Sắp xếp theo Tên (A-Z)</option>
+            <option value="services">📦 Số lượng Service</option>
+          </select>
           <label style="font-size: 0.85rem; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; gap: 6px;">
             <input type="checkbox" id="auto-refresh-compose-stats" checked> ⚡ Auto-Monitor Stacks
           </label>
@@ -380,8 +394,11 @@
       <div class="grid-metrics">
         <div class="metric-card">
           <div class="metric-header">
-            <span>SWAP MEMORY</span>
-            <button class="btn btn-secondary" onclick="triggerResetSwapModal()" title="Reset bộ nhớ Swap" style="padding: 2px 8px; font-size: 0.75rem; background: rgba(245, 158, 11, 0.12); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3);">🧹 Reset Swap</button>
+            <span>SWAP & FAN CONTROL</span>
+            <div style="display: flex; gap: 4px;">
+              <button class="btn btn-secondary" onclick="triggerPwmConfigModal()" title="Chạy lệnh pwmconfig -c 0 -s 255" style="padding: 2px 8px; font-size: 0.75rem; background: rgba(56, 189, 248, 0.12); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">🌪️ PWM 255</button>
+              <button class="btn btn-secondary" onclick="triggerResetSwapModal()" title="Reset bộ nhớ Swap" style="padding: 2px 8px; font-size: 0.75rem; background: rgba(245, 158, 11, 0.12); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3);">🧹 Reset Swap</button>
+            </div>
           </div>
           <div class="metric-value" id="host-swap" style="color: var(--accent-amber);">0 / 0 MB</div>
           <div class="progress-bar"><div class="progress-fill" id="fill-swap" style="background: var(--accent-amber);"></div></div>
@@ -836,6 +853,49 @@ Bạn có thể bấm nút "🛡️ System Health AI Audit" ở trên để tôi
           <button class="btn btn-secondary" onclick="closeModal('modal-reset-swap')">Hủy bỏ</button>
           <button class="btn btn-primary" id="btn-confirm-reset-swap" onclick="executeResetSwap()" style="background: #eab308; color: #000; border: none; font-weight: 700;">
             ⚡ Xác Nhận Reset Swap
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: PWM FAN SPEED CONFIG -->
+  <div class="modal-overlay" id="modal-pwmconfig">
+    <div class="modal-box" style="max-width: 540px;">
+      <div class="modal-header">
+        <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+          <span>🌪️</span> Điều Khiển Quạt Tản Nhiệt (PWM Config)
+        </div>
+        <button class="btn btn-secondary" onclick="closeModal('modal-pwmconfig')">✕</button>
+      </div>
+      <div class="modal-body" style="line-height: 1.6;">
+        <p style="margin-bottom: 14px; font-size: 0.95rem; color: var(--text-main);">
+          Chạy lệnh điều khiển tốc độ quạt phần cứng hệ thống (PWM) với công suất tối đa hoặc tùy chỉnh.
+        </p>
+        
+        <div style="background: #090e18; padding: 14px 18px; border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-bottom: 18px; font-size: 0.9rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <span style="color: var(--text-muted);">Lệnh thực thi:</span>
+            <code style="background: #1e293b; color: #38bdf8; padding: 3px 10px; border-radius: 4px; font-weight: 600; font-family: var(--font-mono); font-size: 0.92rem;" id="pwm-preview-cmd">pwmconfig -c 0 -s 255</code>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px;">
+            <div>
+              <label style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Kênh điều khiển (-c):</label>
+              <input type="number" id="pwm-channel-input" value="0" min="0" max="10" class="input-field" style="width: 100%; padding: 7px 10px; background: #0f172a; border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: #fff;" oninput="updatePwmCmdPreview()">
+            </div>
+            <div>
+              <label style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Tốc độ PWM (-s 0-255):</label>
+              <input type="number" id="pwm-speed-input" value="255" min="0" max="255" class="input-field" style="width: 100%; padding: 7px 10px; background: #0f172a; border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: #fff;" oninput="updatePwmCmdPreview()">
+            </div>
+          </div>
+        </div>
+
+        <div id="pwm-status-msg" style="display: none; padding: 12px; border-radius: var(--radius-md); font-size: 0.88rem; margin-bottom: 16px; white-space: pre-wrap; font-family: var(--font-mono); max-height: 180px; overflow-y: auto;"></div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+          <button class="btn btn-secondary" onclick="closeModal('modal-pwmconfig')">Đóng</button>
+          <button class="btn btn-primary" id="btn-confirm-pwm" onclick="executePwmConfig()" style="background: #0284c7; color: #fff; border: none; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+            <span>⚡</span> Chạy Lệnh PWM (255 Max)
           </button>
         </div>
       </div>

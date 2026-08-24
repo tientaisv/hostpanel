@@ -118,10 +118,16 @@ function renderContainers(list) {
     const onClickStop    = stopDisabled   ? '' : `containerAction('${c.id}','stop')`;
     const onClickRestart = restartDisabled ? '' : `containerAction('${c.id}','restart')`;
 
+    const engineBadge = c.engine === 'podman' 
+      ? `<span style="display:inline-block; padding:1px 6px; font-size:0.7rem; font-weight:600; border-radius:4px; background:rgba(192,132,252,0.15); color:#c084fc; border:1px solid rgba(192,132,252,0.3); margin-left:6px;">🦭 Podman</span>`
+      : `<span style="display:inline-block; padding:1px 6px; font-size:0.7rem; font-weight:600; border-radius:4px; background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.3); margin-left:6px;">🐳 Docker</span>`;
+
     return `
       <tr>
         <td>
-          <div style="font-weight: 700; color: var(--text-main); font-size: 0.95rem;">${escapeHTML(c.name)}</div>
+          <div style="display: flex; align-items: center; font-weight: 700; color: var(--text-main); font-size: 0.95rem;">
+            ${escapeHTML(c.name)} ${engineBadge}
+          </div>
           <div style="font-family: monospace; color: var(--text-muted); font-size: 0.75rem;">${c.short_id}</div>
           ${c.project ? `<div style="font-size: 0.75rem; color: var(--accent-blue); margin-top: 2px;">🧩 ${escapeHTML(c.project)}</div>` : ''}
         </td>

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 )
 
 type VolumeSummary struct {
@@ -17,6 +19,7 @@ type VolumeSummary struct {
 	SizeDisplay string   `json:"size_display"`
 	StatusTag   string   `json:"status_tag"` // "in_use", "used_stopped", "unused"
 	Containers  []string `json:"containers"`
+	Engine      string   `json:"engine"` // "podman" or "docker"
 }
 
 type RawVolume struct {
@@ -32,7 +35,7 @@ type RawVolumeList struct {
 }
 
 func (c *Client) ListVolumes() ([]VolumeSummary, error) {
-	// Map volume usage via containers inspect
+	// Parallel container inspect to map volume usage
 	containers, err := c.ListContainers()
 	if err != nil {
 		return nil, err
@@ -41,81 +44,161 @@ func (c *Client) ListVolumes() ([]VolumeSummary, error) {
 	runningVolumes := make(map[string]bool)
 	stoppedVolumes := make(map[string]bool)
 	volumeContainers := make(map[string][]string)
+	var mu sync.Mutex
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 10) // Limit concurrency to 10 workers
 
 	for _, ctr := range containers {
-		inspectBody, code, errInspect := c.Get(fmt.Sprintf("/containers/%s/json", ctr.ID))
-		if errInspect == nil && code == 200 {
-			var details struct {
-				Mounts []struct {
-					Name string `json:"Name"`
-					Type string `json:"Type"`
-				} `json:"Mounts"`
-			}
-			if errUnmarshal := json.Unmarshal(inspectBody, &details); errUnmarshal == nil {
-				for _, m := range details.Mounts {
-					if m.Name != "" {
-						if ctr.State == "running" {
-							runningVolumes[m.Name] = true
-						} else {
-							stoppedVolumes[m.Name] = true
+		wg.Add(1)
+		go func(cid, cname, cstate string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			sc := c.GetClientForContainer(cid)
+			inspectBody, code, errInspect := sc.Get(fmt.Sprintf("/containers/%s/json", cid))
+			if errInspect == nil && code == 200 {
+				var details struct {
+					Mounts []struct {
+						Name string `json:"Name"`
+						Type string `json:"Type"`
+					} `json:"Mounts"`
+				}
+				if errUnmarshal := json.Unmarshal(inspectBody, &details); errUnmarshal == nil {
+					mu.Lock()
+					for _, m := range details.Mounts {
+						if m.Name != "" {
+							if cstate == "running" {
+								runningVolumes[m.Name] = true
+							} else {
+								stoppedVolumes[m.Name] = true
+							}
+							volumeContainers[m.Name] = append(volumeContainers[m.Name], cname)
 						}
-						volumeContainers[m.Name] = append(volumeContainers[m.Name], ctr.Name)
 					}
+					mu.Unlock()
 				}
 			}
-		}
+		}(ctr.ID, ctr.Name, ctr.State)
 	}
+	wg.Wait()
 
-	body, code, err := c.Get("/volumes")
-	if err != nil {
-		return nil, err
-	}
-	if code != 200 {
-		return nil, fmt.Errorf("list volumes status %d", code)
-	}
+	var result []VolumeSummary
+	seenNames := make(map[string]bool)
 
-	var rawList RawVolumeList
-	if err := json.Unmarshal(body, &rawList); err != nil {
-		return nil, err
-	}
-
-	result := make([]VolumeSummary, 0)
-	for _, v := range rawList.Volumes {
-		statusTag := "unused"
-		if runningVolumes[v.Name] {
-			statusTag = "in_use"
-		} else if stoppedVolumes[v.Name] {
-			statusTag = "used_stopped"
+	for _, sc := range c.allClients {
+		body, code, err := sc.Get("/volumes")
+		if err != nil || code != 200 {
+			continue
 		}
 
-		sizeBytes := calculateDirSize(v.Mountpoint)
-		sizeMB := float64(sizeBytes) / (1024 * 1024)
-		sizeDisplay := formatSize(sizeBytes)
+		var rawVolumes []RawVolume
+		trimmedBody := strings.TrimSpace(string(body))
 
-		result = append(result, VolumeSummary{
-			Name:        v.Name,
-			Driver:      v.Driver,
-			Mountpoint:  v.Mountpoint,
-			Scope:       v.Scope,
-			Created:     v.CreatedAt,
-			SizeMB:      sizeMB,
-			SizeDisplay: sizeDisplay,
-			StatusTag:   statusTag,
-			Containers:  volumeContainers[v.Name],
-		})
+		// Podman returns array `[...]`, Docker returns object `{"Volumes": [...]}`
+		if strings.HasPrefix(trimmedBody, "[") {
+			if errArr := json.Unmarshal(body, &rawVolumes); errArr != nil {
+				continue
+			}
+		} else {
+			var rawList RawVolumeList
+			if errObj := json.Unmarshal(body, &rawList); errObj != nil {
+				continue
+			}
+			rawVolumes = rawList.Volumes
+		}
+
+		engineName := sc.Engine()
+		var clientVols = make([]VolumeSummary, len(rawVolumes))
+		var wgSize sync.WaitGroup
+
+		for idx, v := range rawVolumes {
+			wgSize.Add(1)
+			go func(i int, vol RawVolume) {
+				defer wgSize.Done()
+
+				statusTag := "unused"
+				mu.Lock()
+				if runningVolumes[vol.Name] {
+					statusTag = "in_use"
+				} else if stoppedVolumes[vol.Name] {
+					statusTag = "used_stopped"
+				}
+				ctrs := volumeContainers[vol.Name]
+				mu.Unlock()
+
+				mount := vol.Mountpoint
+				if mount == "" || !dirExists(mount) {
+					candidates := []string{
+						"/var/lib/containers/storage/volumes/" + vol.Name + "/_data",
+						"/var/lib/docker/volumes/" + vol.Name + "/_data",
+					}
+					for _, cand := range candidates {
+						if dirExists(cand) {
+							mount = cand
+							break
+						}
+					}
+				}
+
+				sizeBytes := calculateDirSize(mount)
+				sizeMB := float64(sizeBytes) / (1024 * 1024)
+				sizeDisplay := formatSize(sizeBytes)
+
+				clientVols[i] = VolumeSummary{
+					Name:        vol.Name,
+					Driver:      vol.Driver,
+					Mountpoint:  mount,
+					Scope:       vol.Scope,
+					Created:     vol.CreatedAt,
+					SizeMB:      sizeMB,
+					SizeDisplay: sizeDisplay,
+					StatusTag:   statusTag,
+					Containers:  ctrs,
+					Engine:      engineName,
+				}
+			}(idx, v)
+		}
+		wgSize.Wait()
+
+		for _, cv := range clientVols {
+			key := engineName + ":" + cv.Name
+			if !seenNames[key] {
+				seenNames[key] = true
+				result = append(result, cv)
+			}
+		}
 	}
 
 	return result, nil
 }
 
+func dirExists(path string) bool {
+	if fi, err := os.Stat(path); err == nil {
+		return fi.IsDir()
+	}
+	return false
+}
+
 func calculateDirSize(path string) int64 {
+	if path == "" {
+		return 0
+	}
 	var totalSize int64
+	var fileCount int
+
 	_ = filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
 		if !info.IsDir() {
 			totalSize += info.Size()
+			fileCount++
+			// Cap at 10,000 files to prevent long-running walks on huge DB directories
+			if fileCount > 10000 {
+				return filepath.SkipDir
+			}
 		}
 		return nil
 	})
@@ -140,23 +223,31 @@ func formatSize(bytes int64) string {
 
 func (c *Client) RemoveVolume(name string, force bool) error {
 	path := fmt.Sprintf("/volumes/%s?force=%t", name, force)
-	body, code, err := c.Delete(path)
-	if err != nil {
-		return err
+	var lastErr error
+	for _, sc := range c.allClients {
+		body, code, err := sc.Delete(path)
+		if err == nil && (code == 204 || code == 200) {
+			return nil
+		}
+		if err != nil {
+			lastErr = err
+		} else {
+			lastErr = fmt.Errorf("remove volume failed status %d: %s", code, string(body))
+		}
 	}
-	if code != 204 && code != 200 {
-		return fmt.Errorf("remove volume failed status %d: %s", code, string(body))
-	}
-	return nil
+	return lastErr
 }
 
 func (c *Client) PruneVolumes() ([]byte, error) {
-	body, code, err := c.Post("/volumes/prune", nil)
-	if err != nil {
-		return nil, err
+	var results []string
+	for _, sc := range c.allClients {
+		body, code, err := sc.Post("/volumes/prune", nil)
+		if err == nil && code == 200 {
+			results = append(results, string(body))
+		}
 	}
-	if code != 200 {
-		return nil, fmt.Errorf("prune volumes status %d: %s", code, string(body))
+	if len(results) > 0 {
+		return []byte(results[0]), nil
 	}
-	return body, nil
+	return nil, fmt.Errorf("prune volumes failed on all engines")
 }

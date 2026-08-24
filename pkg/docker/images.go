@@ -15,6 +15,7 @@ type ImageSummary struct {
 	Created     int64    `json:"created"`
 	StatusTag   string   `json:"status_tag"` // "in_use", "used_stopped", "unused"
 	Containers  []string `json:"containers"`
+	Engine      string   `json:"engine"` // "podman" or "docker"
 }
 
 type RawImage struct {
@@ -51,66 +52,76 @@ func (c *Client) ListImages() ([]ImageSummary, error) {
 		imageContainerMap[imgName] = append(imageContainerMap[imgName], ctr.Name)
 	}
 
-	body, code, err := c.Get("/images/json")
-	if err != nil {
-		return nil, err
-	}
-	if code != 200 {
-		return nil, fmt.Errorf("list images failed status %d", code)
-	}
-
-	var rawList []RawImage
-	if err := json.Unmarshal(body, &rawList); err != nil {
-		return nil, err
-	}
-
 	result := make([]ImageSummary, 0)
-	for _, r := range rawList {
-		shortID := r.ID
-		if strings.HasPrefix(shortID, "sha256:") {
-			shortID = shortID[7:]
-		}
-		if len(shortID) > 12 {
-			shortID = shortID[:12]
-		}
+	seenIDs := make(map[string]bool)
 
-		tagDisplay := "<none>:<none>"
-		if len(r.RepoTags) > 0 && r.RepoTags[0] != "<none>:<none>" {
-			tagDisplay = strings.Join(r.RepoTags, ", ")
+	for _, sc := range c.allClients {
+		body, code, err := sc.Get("/images/json")
+		if err != nil || code != 200 {
+			continue
 		}
 
-		// Determine usage tag
-		statusTag := "unused"
-		isInUse := runningImageIDs[r.ID]
-		isUsedStopped := stoppedImageIDs[r.ID]
+		var rawList []RawImage
+		if err := json.Unmarshal(body, &rawList); err != nil {
+			continue
+		}
 
-		for _, tag := range r.RepoTags {
-			if runningImageNames[tag] {
-				isInUse = true
+		engineName := sc.Engine()
+
+		for _, r := range rawList {
+			key := engineName + ":" + r.ID
+			if seenIDs[key] {
+				continue
 			}
-			if stoppedImageNames[tag] {
-				isUsedStopped = true
+			seenIDs[key] = true
+
+			shortID := r.ID
+			if strings.HasPrefix(shortID, "sha256:") {
+				shortID = shortID[7:]
 			}
+			if len(shortID) > 12 {
+				shortID = shortID[:12]
+			}
+
+			tagDisplay := "<none>:<none>"
+			if len(r.RepoTags) > 0 && r.RepoTags[0] != "<none>:<none>" {
+				tagDisplay = strings.Join(r.RepoTags, ", ")
+			}
+
+			// Determine usage tag
+			statusTag := "unused"
+			isInUse := runningImageIDs[r.ID]
+			isUsedStopped := stoppedImageIDs[r.ID]
+
+			for _, tag := range r.RepoTags {
+				if runningImageNames[tag] {
+					isInUse = true
+				}
+				if stoppedImageNames[tag] {
+					isUsedStopped = true
+				}
+			}
+
+			if isInUse {
+				statusTag = "in_use"
+			} else if isUsedStopped {
+				statusTag = "used_stopped"
+			}
+
+			associatedCtrs := imageContainerMap[r.ID]
+
+			result = append(result, ImageSummary{
+				ID:         r.ID,
+				ShortID:    shortID,
+				RepoTags:   r.RepoTags,
+				TagDisplay: tagDisplay,
+				SizeMB:     float64(r.Size) / (1024 * 1024),
+				Created:    r.Created,
+				StatusTag:  statusTag,
+				Containers: associatedCtrs,
+				Engine:     engineName,
+			})
 		}
-
-		if isInUse {
-			statusTag = "in_use"
-		} else if isUsedStopped {
-			statusTag = "used_stopped"
-		}
-
-		associatedCtrs := imageContainerMap[r.ID]
-
-		result = append(result, ImageSummary{
-			ID:         r.ID,
-			ShortID:    shortID,
-			RepoTags:   r.RepoTags,
-			TagDisplay: tagDisplay,
-			SizeMB:     float64(r.Size) / (1024 * 1024),
-			Created:    r.Created,
-			StatusTag:  statusTag,
-			Containers: associatedCtrs,
-		})
 	}
 
 	return result, nil
@@ -118,23 +129,31 @@ func (c *Client) ListImages() ([]ImageSummary, error) {
 
 func (c *Client) RemoveImage(id string, force bool) error {
 	path := fmt.Sprintf("/images/%s?force=%t", id, force)
-	body, code, err := c.Delete(path)
-	if err != nil {
-		return err
+	var lastErr error
+	for _, sc := range c.allClients {
+		body, code, err := sc.Delete(path)
+		if err == nil && (code == 200 || code == 204) {
+			return nil
+		}
+		if err != nil {
+			lastErr = err
+		} else {
+			lastErr = fmt.Errorf("remove image failed status %d: %s", code, string(body))
+		}
 	}
-	if code != 200 {
-		return fmt.Errorf("remove image failed status %d: %s", code, string(body))
-	}
-	return nil
+	return lastErr
 }
 
 func (c *Client) PruneImages() ([]byte, error) {
-	body, code, err := c.Post("/images/prune", nil)
-	if err != nil {
-		return nil, err
+	var results []string
+	for _, sc := range c.allClients {
+		body, code, err := sc.Post("/images/prune", nil)
+		if err == nil && code == 200 {
+			results = append(results, string(body))
+		}
 	}
-	if code != 200 {
-		return nil, fmt.Errorf("prune images failed status %d: %s", code, string(body))
+	if len(results) > 0 {
+		return []byte(results[0]), nil
 	}
-	return body, nil
+	return nil, fmt.Errorf("prune images failed on all engines")
 }

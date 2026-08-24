@@ -21,6 +21,8 @@ type ExecCreateResponse struct {
 }
 
 func (c *Client) HandleWebTerminal(containerID string, wsConn *ws.Conn) error {
+	sc := c.GetClientForContainer(containerID)
+
 	// Step 1: Create Exec Instance
 	execCfg := ExecCreateConfig{
 		AttachStdin:  true,
@@ -31,12 +33,12 @@ func (c *Client) HandleWebTerminal(containerID string, wsConn *ws.Conn) error {
 	}
 	cfgBytes, _ := json.Marshal(execCfg)
 
-	resBody, code, err := c.Post(fmt.Sprintf("/containers/%s/exec", containerID), cfgBytes)
+	resBody, code, err := sc.Post(fmt.Sprintf("/containers/%s/exec", containerID), cfgBytes)
 	if err != nil || code != 201 {
 		// Fallback to /bin/bash if /bin/sh failed or retry with sh
 		execCfg.Cmd = []string{"sh"}
 		cfgBytes, _ = json.Marshal(execCfg)
-		resBody, code, err = c.Post(fmt.Sprintf("/containers/%s/exec", containerID), cfgBytes)
+		resBody, code, err = sc.Post(fmt.Sprintf("/containers/%s/exec", containerID), cfgBytes)
 		if err != nil || code != 201 {
 			return fmt.Errorf("create exec failed status %d: %s", code, string(resBody))
 		}
@@ -49,7 +51,7 @@ func (c *Client) HandleWebTerminal(containerID string, wsConn *ws.Conn) error {
 	execID := execResp.ID
 
 	// Step 2: Start Exec Session via raw Unix socket
-	rawConn, err := c.RawConn()
+	rawConn, err := sc.RawConn()
 	if err != nil {
 		return err
 	}
