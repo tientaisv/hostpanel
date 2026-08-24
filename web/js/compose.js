@@ -65,12 +65,16 @@ function sortStacksList(stacks, sortMode) {
       if (memB !== memA) return memB - memA;
       return (b.total_cpu_percent || 0) - (a.total_cpu_percent || 0);
     } else if (sortMode === "name") {
-      return (a.project || "").localeCompare(b.project || "");
+      const pCmp = (a.project || "").localeCompare(b.project || "");
+      if (pCmp !== 0) return pCmp;
+      return (a.engine || "").localeCompare(b.engine || "");
     } else if (sortMode === "services") {
       const cntA = (a.services && a.services.length) || 0;
       const cntB = (b.services && b.services.length) || 0;
       if (cntB !== cntA) return cntB - cntA;
-      return (a.project || "").localeCompare(b.project || "");
+      const pCmp = (a.project || "").localeCompare(b.project || "");
+      if (pCmp !== 0) return pCmp;
+      return (a.engine || "").localeCompare(b.engine || "");
     }
     return 0;
   });
@@ -109,6 +113,8 @@ function renderComposeStacks(stacks) {
     if (st.state === "running") { stateClass = "badge-running"; stateText = "RUNNING"; }
     else if (st.state === "partial") { stateClass = "badge-paused"; stateText = "PARTIAL RUNNING"; }
 
+    const engineName = st.engine || "docker";
+    const stackKey = `${st.project}|${engineName}`;
     const sortedServices = sortServicesList(st.services || [], sortMode);
 
     const servicesList = sortedServices.map(srv => {
@@ -138,19 +144,19 @@ function renderComposeStacks(stacks) {
     const memVal = st.total_mem_percent ? st.total_mem_percent.toFixed(1) : "0.0";
 
     return `
-      <div class="data-card compose-stack-card" data-project="${escapeHTML(st.project)}" style="padding: 20px;">
+      <div class="data-card compose-stack-card" data-stack-key="${escapeHTML(stackKey)}" data-project="${escapeHTML(st.project)}" data-engine="${escapeHTML(engineName)}" style="padding: 20px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
           <div style="display: flex; align-items: center; gap: 10px;">
             <h3 style="font-size: 1.2rem;">🧩 Stack: ${escapeHTML(st.project)}</h3>
-            ${st.engine === 'podman' 
+            ${engineName === 'podman' 
               ? `<span style="display:inline-block; padding:1px 6px; font-size:0.7rem; font-weight:600; border-radius:4px; background:rgba(192,132,252,0.15); color:#c084fc; border:1px solid rgba(192,132,252,0.3);">🦭 Podman</span>`
               : `<span style="display:inline-block; padding:1px 6px; font-size:0.7rem; font-weight:600; border-radius:4px; background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.3);">🐳 Docker</span>`}
             <span class="badge ${stateClass}" data-role="stack-badge">${stateText} (${st.running_count}/${st.total})</span>
           </div>
           <div style="display: flex; gap: 8px;">
-            <button class="btn btn-secondary" onclick="composeAction('${escapeHTML(st.project)}', 'start')">▶️ Start Stack</button>
-            <button class="btn btn-secondary" onclick="composeAction('${escapeHTML(st.project)}', 'restart')">🔄 Restart</button>
-            <button class="btn btn-danger" onclick="composeAction('${escapeHTML(st.project)}', 'stop')">⏹️ Stop Stack</button>
+            <button class="btn btn-secondary" onclick="composeAction('${escapeHTML(st.project)}', '${escapeHTML(engineName)}', 'start')">▶️ Start Stack</button>
+            <button class="btn btn-secondary" onclick="composeAction('${escapeHTML(st.project)}', '${escapeHTML(engineName)}', 'restart')">🔄 Restart</button>
+            <button class="btn btn-danger" onclick="composeAction('${escapeHTML(st.project)}', '${escapeHTML(engineName)}', 'stop')">⏹️ Stop Stack</button>
           </div>
         </div>
 
@@ -196,12 +202,15 @@ function updateComposeStatsInPlace(stacks) {
   }
 
   const stackMap = new Map();
-  stacks.forEach(st => stackMap.set(st.project, st));
+  stacks.forEach(st => {
+    const key = `${st.project}|${st.engine || 'docker'}`;
+    stackMap.set(key, st);
+  });
 
   for (const card of existingCards) {
-    const projName = card.getAttribute("data-project");
-    const st = stackMap.get(projName);
-    if (!st) return false; // Stacks project names mismatch
+    const stackKey = card.getAttribute("data-stack-key") || `${card.getAttribute("data-project")}|${card.getAttribute("data-engine") || "docker"}`;
+    const st = stackMap.get(stackKey);
+    if (!st) return false; // Stacks key mismatch, fallback to full render
 
     // Update stack state badge
     let stateClass = "badge-stopped";
@@ -279,12 +288,13 @@ function formatMBHelper(mb) {
   return mb.toFixed(1) + " MB";
 }
 
-async function composeAction(project, action) {
+async function composeAction(project, engine, action) {
   try {
+    const targetProject = engine ? `${project}|${engine}` : project;
     const res = await fetch("/api/compose/action", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ project, action })
+      body: JSON.stringify({ project: targetProject, action })
     });
     if (!res.ok) {
       const err = await res.json();
