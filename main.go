@@ -23,6 +23,20 @@ import (
 var client *docker.Client
 
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "--install-service", "install", "-i":
+			if err := system.AutoInstallSystemdService(); err != nil {
+				log.Fatalf("❌ Cài đặt Systemd Service thất bại: %v", err)
+			}
+			fmt.Println("🎉 Đã cài đặt và kích hoạt Systemd Service thành công! Dịch vụ đang chạy ngầm.")
+			return
+		}
+	}
+
+	// Tự động kiểm tra và cài đặt Systemd Service nếu chưa có
+	system.CheckAndAutoInstallIfMissing()
+
 	client = docker.NewClient("")
 	engine := client.GetEngineInfo()
 	log.Printf("🚀 Container Engine detected: %s (Version: %s, API: %s, Socket: %s, IsPodman: %t)\n",

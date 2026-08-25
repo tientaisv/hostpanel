@@ -1,6 +1,7 @@
 [Unit]
 Description=DockPulse - Ultra Lightweight Docker & Podman Compose Manager
-After=network-online.target podman.socket podman.service docker.service
+After=network.target docker.service podman.service podman.socket
+Wants=docker.service podman.service podman.socket
 Wants=network-online.target podman.socket docker.service
 
 [Service]

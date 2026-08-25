@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ import (
 )
 
 type MetricRecord struct {
+	ServerName        string  `json:"server_name,omitempty"`
 	RecordedAt        string  `json:"recorded_at"`
 	HostCPUPercent    float64 `json:"host_cpu_percent"`
 	HostRAMUsedMB     int     `json:"host_ram_used_mb"`
@@ -34,6 +36,7 @@ type MetricRecord struct {
 
 type MetricsLogger struct {
 	mu           sync.Mutex
+	serverName   string
 	supabaseURL  string
 	supabaseKey  string
 	pushInterval time.Duration
@@ -62,7 +65,7 @@ func InitLogger(dockerClient *docker.Client) {
 	GlobalLogger = l
 
 	if l.supabaseURL != "" && l.supabaseKey != "" {
-		log.Printf("📊 Supabase Metrics Logging Enabled -> Destination: %s (Push Interval: %v)\n", l.supabaseURL, l.pushInterval)
+		log.Printf("📊 Supabase Metrics Logging Enabled -> Server: [%s] | Destination: %s (Push Interval: %v)\n", l.serverName, l.supabaseURL, l.pushInterval)
 	} else {
 		log.Println("⚠️ Supabase Credentials not set in .env. Historical metrics will be stored in-memory fallback.")
 	}
@@ -72,6 +75,12 @@ func InitLogger(dockerClient *docker.Client) {
 }
 
 func (l *MetricsLogger) loadEnvConfig() {
+	hostname, _ := os.Hostname()
+	if hostname == "" {
+		hostname = "default"
+	}
+	l.serverName = hostname
+
 	envFiles := []string{".env", "/root/hostcontrol/.env"}
 	for _, envFile := range envFiles {
 		file, err := os.Open(envFile)
@@ -86,6 +95,10 @@ func (l *MetricsLogger) loadEnvConfig() {
 				k := strings.TrimSpace(parts[0])
 				v := strings.TrimSpace(parts[1])
 				switch k {
+				case "SERVER_NAME":
+					if v != "" {
+						l.serverName = v
+					}
 				case "SUPABASE_URL":
 					if v != "" {
 						l.supabaseURL = strings.TrimRight(v, "/")
@@ -105,6 +118,9 @@ func (l *MetricsLogger) loadEnvConfig() {
 	}
 
 	// Override with process env if set
+	if sName := os.Getenv("SERVER_NAME"); sName != "" {
+		l.serverName = sName
+	}
 	if url := os.Getenv("SUPABASE_URL"); url != "" {
 		l.supabaseURL = strings.TrimRight(url, "/")
 	}
@@ -142,6 +158,7 @@ func (l *MetricsLogger) collectSnapshot() {
 	}
 
 	record := MetricRecord{
+		ServerName:      l.serverName,
 		RecordedAt:      time.Now().UTC().Format(time.RFC3339),
 		HostCPUPercent:  hostStats.CPUPercent,
 		HostRAMUsedMB:   int(hostStats.MemUsedMB),
@@ -235,7 +252,10 @@ func (l *MetricsLogger) FetchHistory(timeRange string) ([]MetricRecord, error) {
 	// Try fetching from Supabase if configured
 	if l.supabaseURL != "" && l.supabaseKey != "" {
 		sinceISO := since.Format(time.RFC3339)
-		endpoint := fmt.Sprintf("%s/rest/v1/resource_metrics?recorded_at=gt.%s&order=recorded_at.asc&limit=2000", l.supabaseURL, sinceISO)
+		endpoint := fmt.Sprintf("%s/rest/v1/resource_metrics?recorded_at=gt.%s&server_name=eq.%s&order=recorded_at.asc&limit=2000",
+			l.supabaseURL,
+			url.QueryEscape(sinceISO),
+			url.QueryEscape(l.serverName))
 
 		req, err := http.NewRequest("GET", endpoint, nil)
 		if err == nil {

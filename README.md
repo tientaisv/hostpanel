@@ -82,6 +82,7 @@ Nếu bạn muốn lưu trữ đồ thị lịch sử **24h / 7d / 30d**, hãy t
 ```sql
 CREATE TABLE IF NOT EXISTS resource_metrics (
     id BIGSERIAL PRIMARY KEY,
+    server_name VARCHAR(100) DEFAULT 'default',
     recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     
     host_cpu_percent REAL DEFAULT 0,
@@ -97,16 +98,20 @@ CREATE TABLE IF NOT EXISTS resource_metrics (
     docker_net_tx_mb REAL DEFAULT 0
 );
 
-CREATE INDEX IF NOT EXISTS idx_resource_metrics_recorded_at 
-ON resource_metrics (recorded_at DESC);
+-- Nếu bảng đã tồn tại từ trước, bạn chỉ cần chạy lệnh sau để thêm cột server_name:
+-- ALTER TABLE resource_metrics ADD COLUMN IF NOT EXISTS server_name VARCHAR(100) DEFAULT 'default';
+
+CREATE INDEX IF NOT EXISTS idx_resource_metrics_server_recorded_at 
+ON resource_metrics (server_name, recorded_at DESC);
 
 -- Tắt RLS để ứng dụng đẩy metrics tự động
 ALTER TABLE resource_metrics DISABLE ROW LEVEL SECURITY;
 ```
 
-3. Copy `SUPABASE_URL` và `SUPABASE_KEY` trong mục **Project Settings -> API** dán vào tệp `.env`:
+3. Copy `SUPABASE_URL` và `SUPABASE_KEY` trong mục **Project Settings -> API** dán vào tệp `.env` (Định danh từng VPS bằng `SERVER_NAME`):
 
 ```env
+SERVER_NAME=vps-01
 SUPABASE_URL=https://your-project-id.supabase.co
 SUPABASE_KEY=your_supabase_api_key
 METRICS_PUSH_INTERVAL_SEC=300
@@ -114,15 +119,25 @@ METRICS_PUSH_INTERVAL_SEC=300
 
 ---
 
-## ⚙️ Cài Đặt Running As Systemd Daemon Service
+## ⚙️ Thiết Lập Chạy Ngầm Tự Động (Systemd Service)
 
-Để DockPulse tự động chạy cùng hệ thống khi khởi động lại Server:
+DockPulse đã được tích hợp tính năng **Tự Động Tạo Systemd Service 100%**:
 
+### Cách 1: Tự động (Khuyên dùng)
+- Khi bạn chạy `./dockpulse` lần đầu tiên với quyền `root` trên VPS mới, ứng dụng sẽ **tự động phát hiện, tự tạo file service `/etc/systemd/system/dockpulse.service` với đúng đường dẫn thư mục hiện tại, và tự kích hoạt chạy ngầm (`enable --now`)**.
+- Hoặc bạn có thể chạy lệnh sau để tự động cài service:
+```bash
+./dockpulse --install-service
+```
+
+---
+
+### Cách 2: Tạo thủ công bằng tay (Nếu muốn tùy biến)
 1. Tạo tệp `/etc/systemd/system/dockpulse.service`:
 
 ```ini
 [Unit]
-Description=DockPulse - Ultra Lightweight Docker & Compose Manager
+Description=DockPulse - Ultra Lightweight Docker & Podman Compose Manager
 After=network.target docker.service
 Requires=docker.service
 
@@ -143,8 +158,7 @@ WantedBy=multi-user.target
 
 ```bash
 systemctl daemon-reload
-systemctl enable dockpulse
-systemctl start dockpulse
+systemctl enable --now dockpulse
 systemctl status dockpulse
 ```
 
