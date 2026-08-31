@@ -245,9 +245,26 @@ func restartService() error {
 	return fmt.Errorf("systemctl restart failed")
 }
 
+func getGitHubToken() string {
+	token := os.Getenv("GITHUB_TOKEN")
+	if token == "" {
+		token = os.Getenv("GH_TOKEN")
+	}
+	return strings.TrimSpace(token)
+}
+
 func downloadAndExtractRepo(tarUrl, destDir string) error {
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Get(tarUrl)
+	req, err := http.NewRequest("GET", tarUrl, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", "DockPulse-AutoUpdater")
+	if token := getGitHubToken(); token != "" {
+		req.Header.Set("Authorization", "token "+token)
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
