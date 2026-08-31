@@ -3,6 +3,7 @@ package system
 import (
 	"bufio"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"regexp"
@@ -261,10 +262,23 @@ func auditPortSecurity(report *SecurityReport) {
 }
 
 func BlockIPWithFirewall(ip string) error {
+	ip = strings.TrimSpace(ip)
 	if ip == "" {
-		return fmt.Errorf("ip address cannot be empty")
+		return fmt.Errorf("địa chỉ IP không được để trống")
 	}
-	// Try iptables block
-	cmd := exec.Command("iptables", "-A", "INPUT", "-s", ip, "-j", "DROP")
-	return cmd.Run()
+
+	// Validate IP address format (IPv4 or IPv6) or CIDR
+	if net.ParseIP(ip) == nil {
+		if _, _, err := net.ParseCIDR(ip); err != nil {
+			return fmt.Errorf("định dạng địa chỉ IP không hợp lệ: %s", ip)
+		}
+	}
+
+	// Delegate to AddFirewallRule with DENY action
+	return AddFirewallRule(FirewallRule{
+		Port:     "All",
+		Protocol: "any",
+		Action:   "DENY",
+		FromIP:   ip,
+	})
 }

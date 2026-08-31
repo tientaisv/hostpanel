@@ -3,6 +3,7 @@ package system
 import (
 	"bufio"
 	"fmt"
+	"net"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -294,6 +295,13 @@ func AddFirewallRule(rule FirewallRule) error {
 		action = "ALLOW"
 	}
 	fromIP := strings.TrimSpace(rule.FromIP)
+	if fromIP != "" && fromIP != "Anywhere" && fromIP != "0.0.0.0/0" {
+		if net.ParseIP(fromIP) == nil {
+			if _, _, err := net.ParseCIDR(fromIP); err != nil {
+				return fmt.Errorf("định dạng địa chỉ IP / subnet nguồn không hợp lệ: %s", fromIP)
+			}
+		}
+	}
 
 	switch fwType {
 	case FirewallUFW:

@@ -134,6 +134,7 @@ func main() {
 	mux.HandleFunc("/api/networks/remove", authMiddleware(handleNetworkRemove))
 
 	mux.HandleFunc("/api/system/ports", authMiddleware(handlePorts))
+	mux.HandleFunc("/api/system/full-info", authMiddleware(handleFullServerInfo))
 
 	mux.HandleFunc("/api/files/list", authMiddleware(handleFileList))
 	mux.HandleFunc("/api/files/read", authMiddleware(handleFileRead))
@@ -165,9 +166,19 @@ func main() {
 	fmt.Printf("🔒 DockPulse starting with Authentication (User: %s) on http://0.0.0.0%s (Loaded Gemini Keys: %d, Groq Keys: %d) ...\n",
 		auth.GlobalAuth.Config.AdminUser, addr, ai.GlobalRotater.GeminiKeysCount(), ai.GlobalRotater.GroqKeysCount())
 
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, securityHeadersMiddleware(mux)); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}
+}
+
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -193,15 +204,19 @@ func authWSMiddleware(next http.HandlerFunc) http.HandlerFunc {
 func staticAuthMiddleware(next http.Handler, webDir string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		if path == "/login.html" || path == "/css/style.css" || strings.HasPrefix(path, "/js/login.js") {
+		// Whitelist public resources required by login page
+		if path == "/login.html" || path == "/css/style.css" || strings.HasPrefix(path, "/js/login.js") || path == "/favicon.ico" {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// If not authenticated, redirect HTML pages to login and block static scripts/styles
 		if !auth.GlobalAuth.ValidateRequest(r) {
-			if path == "/" || path == "/index.html" {
+			if path == "/" || path == "/index.html" || strings.HasSuffix(path, ".html") {
 				http.Redirect(w, r, "/login.html", http.StatusFound)
 				return
 			}
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -220,6 +235,17 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
 		return
 	}
+
+	clientIP := auth.ExtractClientIP(r)
+	allowed, retryAfterSec := auth.GlobalAuth.CheckRateLimit(clientIP)
+	if !allowed {
+		jsonResponse(w, 429, map[string]interface{}{
+			"error":       fmt.Sprintf("Bạn đã đăng nhập sai quá nhiều lần. Vui lòng thử lại sau %d giây.", retryAfterSec),
+			"retry_after": retryAfterSec,
+		})
+		return
+	}
+
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -230,15 +256,25 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if auth.GlobalAuth.Authenticate(req.Username, req.Password) {
-		token, err := auth.GlobalAuth.CreateSession(w)
+		auth.GlobalAuth.ResetAttempts(clientIP)
+		token, err := auth.GlobalAuth.CreateSession(w, r)
 		if err != nil {
 			jsonResponse(w, 500, map[string]string{"error": err.Error()})
 			return
 		}
-		jsonResponse(w, 200, map[string]string{
-			"status": "authenticated",
-			"token":  token,
-			"user":   req.Username,
+		jsonResponse(w, 200, map[string]interface{}{
+			"status":              "authenticated",
+			"token":               token,
+			"user":                req.Username,
+			"is_default_password": auth.GlobalAuth.IsDefaultCredentials(),
+		})
+		return
+	}
+
+	lockSec := auth.GlobalAuth.RecordFailedAttempt(clientIP)
+	if lockSec > 0 {
+		jsonResponse(w, 429, map[string]interface{}{
+			"error": "Tên đăng nhập hoặc mật khẩu không chính xác. IP của bạn đã bị tạm khóa 10 phút do thử sai 5 lần liên tiếp.",
 		})
 		return
 	}
@@ -255,11 +291,12 @@ func handleAuthCheck(w http.ResponseWriter, r *http.Request) {
 	if auth.GlobalAuth.ValidateRequest(r) {
 		engine := client.GetEngineInfo()
 		jsonResponse(w, 200, map[string]interface{}{
-			"status":         "authenticated",
-			"user":           auth.GlobalAuth.Config.AdminUser,
-			"engine_name":    engine.Name,
-			"engine_version": engine.Version,
-			"is_podman":      engine.IsPodman,
+			"status":              "authenticated",
+			"user":                auth.GlobalAuth.Config.AdminUser,
+			"engine_name":         engine.Name,
+			"engine_version":      engine.Version,
+			"is_podman":           engine.IsPodman,
+			"is_default_password": auth.GlobalAuth.IsDefaultCredentials(),
 		})
 		return
 	}
@@ -292,6 +329,15 @@ func handleHostStats(w http.ResponseWriter, r *http.Request) {
 		stats.DockerNetTxMB = summary.NetTxMB
 	}
 	jsonResponse(w, 200, stats)
+}
+
+func handleFullServerInfo(w http.ResponseWriter, r *http.Request) {
+	info, err := system.GetFullServerInfo()
+	if err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, 200, info)
 }
 
 func handleContainers(w http.ResponseWriter, r *http.Request) {
@@ -625,6 +671,23 @@ func handleSecurityAudit(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		jsonResponse(w, 500, map[string]string{"error": err.Error()})
 		return
+	}
+	if auth.GlobalAuth != nil && auth.GlobalAuth.IsDefaultCredentials() {
+		report.ThreatScore += 30
+		report.Threats = append([]system.SecurityThreatItem{
+			{
+				Level:       "CRITICAL",
+				Category:    "Authentication Risk",
+				Title:       "Đang sử dụng tài khoản & mật khẩu mặc định (admin / dockpulse2026)",
+				Description: "Hệ thống đang chạy với tài khoản quản trị mặc định. Bất kỳ ai trên mạng đều có thể đăng nhập và kiểm soát toàn bộ máy chủ.",
+				ActionHint:  "Hãy đổi mật khẩu bằng cách cấu hình biến ADMIN_PASS trong file .env hoặc config.json",
+			},
+		}, report.Threats...)
+		if report.ThreatScore >= 60 {
+			report.ThreatLevel = "CRITICAL"
+		} else if report.ThreatScore >= 20 {
+			report.ThreatLevel = "WARNING"
+		}
 	}
 	jsonResponse(w, 200, report)
 }
@@ -1157,12 +1220,13 @@ func handleFileDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleFileDownload(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Query().Get("path")
+	path := strings.TrimSpace(r.URL.Query().Get("path"))
 	if path == "" {
 		http.Error(w, "missing path", 400)
 		return
 	}
-	http.ServeFile(w, r, path)
+	cleanPath := filepath.Clean(path)
+	http.ServeFile(w, r, cleanPath)
 }
 
 func handleFileUpload(w http.ResponseWriter, r *http.Request) {
@@ -1177,10 +1241,11 @@ func handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dir := r.FormValue("dir")
+	dir := strings.TrimSpace(r.FormValue("dir"))
 	if dir == "" {
 		dir = "/"
 	}
+	cleanDir := filepath.Clean(dir)
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
@@ -1189,7 +1254,13 @@ func handleFileUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	destPath := filepath.Join(dir, header.Filename)
+	cleanFilename := filepath.Base(filepath.Clean(header.Filename))
+	if cleanFilename == "" || cleanFilename == "." || cleanFilename == "/" || cleanFilename == ".." {
+		jsonResponse(w, 400, map[string]string{"error": "Tên tệp tin không hợp lệ"})
+		return
+	}
+
+	destPath := filepath.Join(cleanDir, cleanFilename)
 	out, err := os.Create(destPath)
 	if err != nil {
 		jsonResponse(w, 500, map[string]string{"error": err.Error()})

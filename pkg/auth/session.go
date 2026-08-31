@@ -3,9 +3,11 @@ package auth
 import (
 	"bufio"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -19,10 +21,17 @@ type Config struct {
 	AdminPass string `json:"admin_pass"`
 }
 
+type loginAttempt struct {
+	count     int
+	lockUntil time.Time
+	lastTry   time.Time
+}
+
 type SessionStore struct {
-	mu       sync.Mutex
-	sessions map[string]int64 // token -> expiry timestamp
-	Config   Config
+	mu           sync.Mutex
+	sessions     map[string]int64 // token -> expiry timestamp
+	loginTracker map[string]*loginAttempt
+	Config       Config
 }
 
 var GlobalAuth *SessionStore
@@ -100,16 +109,76 @@ func InitAuth(configPath string) {
 	}
 
 	GlobalAuth = &SessionStore{
-		sessions: make(map[string]int64),
-		Config:   cfg,
+		sessions:     make(map[string]int64),
+		loginTracker: make(map[string]*loginAttempt),
+		Config:       cfg,
 	}
 }
 
-func (s *SessionStore) Authenticate(user, pass string) bool {
-	return user == s.Config.AdminUser && pass == s.Config.AdminPass
+func (s *SessionStore) IsDefaultCredentials() bool {
+	return s.Config.AdminUser == "admin" && s.Config.AdminPass == "dockpulse2026"
 }
 
-func (s *SessionStore) CreateSession(w http.ResponseWriter) (string, error) {
+func (s *SessionStore) CheckRateLimit(ip string) (bool, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	att, exists := s.loginTracker[ip]
+	if !exists {
+		return true, 0
+	}
+
+	now := time.Now()
+	if now.Before(att.lockUntil) {
+		remainingSec := int(att.lockUntil.Sub(now).Seconds()) + 1
+		return false, remainingSec
+	}
+
+	// If last try was more than 10 minutes ago, reset
+	if now.Sub(att.lastTry) > 10*time.Minute {
+		delete(s.loginTracker, ip)
+		return true, 0
+	}
+
+	return true, 0
+}
+
+func (s *SessionStore) RecordFailedAttempt(ip string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+	att, exists := s.loginTracker[ip]
+	if !exists {
+		att = &loginAttempt{count: 0}
+		s.loginTracker[ip] = att
+	}
+
+	att.lastTry = now
+	att.count++
+
+	if att.count >= 5 {
+		// Lock for 10 minutes
+		att.lockUntil = now.Add(10 * time.Minute)
+		return 600
+	}
+
+	return 0
+}
+
+func (s *SessionStore) ResetAttempts(ip string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.loginTracker, ip)
+}
+
+func (s *SessionStore) Authenticate(user, pass string) bool {
+	userMatch := subtle.ConstantTimeCompare([]byte(user), []byte(s.Config.AdminUser)) == 1
+	passMatch := subtle.ConstantTimeCompare([]byte(pass), []byte(s.Config.AdminPass)) == 1
+	return userMatch && passMatch
+}
+
+func (s *SessionStore) CreateSession(w http.ResponseWriter, r *http.Request) (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
@@ -121,12 +190,20 @@ func (s *SessionStore) CreateSession(w http.ResponseWriter) (string, error) {
 	s.sessions[token] = expiry
 	s.mu.Unlock()
 
+	isSecure := false
+	if r != nil {
+		if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+			isSecure = true
+		}
+	}
+
 	cookie := &http.Cookie{
 		Name:     "dockpulse_session",
 		Value:    token,
 		Path:     "/",
 		Expires:  time.Now().Add(24 * time.Hour),
 		HttpOnly: true,
+		Secure:   isSecure,
 		SameSite: http.SameSiteLaxMode,
 	}
 	http.SetCookie(w, cookie)
@@ -141,12 +218,21 @@ func (s *SessionStore) ClearSession(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 	}
 
+	isSecure := false
+	if r != nil {
+		if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+			isSecure = true
+		}
+	}
+
 	clearCookie := &http.Cookie{
 		Name:     "dockpulse_session",
 		Value:    "",
 		Path:     "/",
 		Expires:  time.Now().Add(-1 * time.Hour),
 		HttpOnly: true,
+		Secure:   isSecure,
+		SameSite: http.SameSiteLaxMode,
 	}
 	http.SetCookie(w, clearCookie)
 }
@@ -179,4 +265,27 @@ func (s *SessionStore) ValidateToken(token string) bool {
 	}
 
 	return true
+}
+
+func ExtractClientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		ips := strings.Split(xff, ",")
+		if len(ips) > 0 {
+			ip := strings.TrimSpace(ips[0])
+			if net.ParseIP(ip) != nil {
+				return ip
+			}
+		}
+	}
+	if xrip := r.Header.Get("X-Real-IP"); xrip != "" {
+		ip := strings.TrimSpace(xrip)
+		if net.ParseIP(ip) != nil {
+			return ip
+		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil && net.ParseIP(host) != nil {
+		return host
+	}
+	return r.RemoteAddr
 }

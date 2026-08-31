@@ -157,9 +157,9 @@ function updateDashboardUI(data) {
   const swapTotalBytes = (data.swap_total_mb || 0) * 1024 * 1024;
   const swapVal = data.swap_percent ? data.swap_percent.toFixed(1) : 0;
 
-  if (document.getElementById("host-swap")) {
-    document.getElementById("host-swap").textContent = `${formatHumanBytes(swapUsedBytes)} / ${formatHumanBytes(swapTotalBytes)}`;
-  }
+  document.querySelectorAll("#host-swap, #host-swap-activity").forEach(el => {
+    el.textContent = `${formatHumanBytes(swapUsedBytes)} / ${formatHumanBytes(swapTotalBytes)}`;
+  });
   if (document.getElementById("fill-swap")) document.getElementById("fill-swap").style.width = `${Math.min(swapVal, 100)}%`;
 
   // Disk Space
