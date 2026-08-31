@@ -138,7 +138,7 @@ func getLocalGitSHA() string {
 	return ""
 }
 
-// ApplyUpdate executes the self-update process asynchronously
+// ApplyUpdate executes the self-update process asynchronously (for Web UI)
 func ApplyUpdate() error {
 	UpdateMu.Lock()
 	if IsUpdating {
@@ -156,72 +156,11 @@ func ApplyUpdate() error {
 			UpdateMu.Unlock()
 		}()
 
-		appDir, err := os.Getwd()
-		if err != nil {
-			ex, _ := os.Executable()
-			appDir = filepath.Dir(ex)
-		}
-
-		log.Printf("📦 Executing DockPulse Auto-Update in directory: %s\n", appDir)
-
-		// Case A: Git Repository Update
-		if _, err := os.Stat(filepath.Join(appDir, ".git")); err == nil {
+		if err := executeSelfUpdate(false); err != nil {
 			UpdateMu.Lock()
-			LastUpdateLog = "📥 Đang tải mã nguồn mới nhất từ GitHub qua Git..."
+			LastUpdateLog = fmt.Sprintf("❌ Lỗi nâng cấp: %v", err)
 			UpdateMu.Unlock()
-
-			pullOut, err := exec.Command("git", "pull", "origin", "main").CombinedOutput()
-			if err != nil {
-				UpdateMu.Lock()
-				LastUpdateLog = fmt.Sprintf("❌ Lỗi git pull: %v (%s)", err, string(pullOut))
-				UpdateMu.Unlock()
-				return
-			}
-
-			// Ensure Go compiler is ready
-			_ = ensureGoCompiler()
-
-			// Rebuild Go binary
-			if _, err := exec.LookPath("go"); err == nil {
-				UpdateMu.Lock()
-				LastUpdateLog = "⚙️ Đang biên dịch phiên bản Go binary mới..."
-				UpdateMu.Unlock()
-
-				buildOut, err := exec.Command("go", "build", "-o", "dockpulse", "main.go").CombinedOutput()
-				if err != nil {
-					UpdateMu.Lock()
-					LastUpdateLog = fmt.Sprintf("❌ Lỗi biên dịch Go: %v (%s)", err, string(buildOut))
-					UpdateMu.Unlock()
-					return
-				}
-			}
-		} else {
-			// Case B: Standalone / Tarball Update
-			UpdateMu.Lock()
-			LastUpdateLog = "📥 Đang tải gói cập nhật (Tarball) từ GitHub..."
-			UpdateMu.Unlock()
-
-			tarUrl := fmt.Sprintf("https://github.com/%s/archive/refs/heads/main.tar.gz", GitHubRepo)
-			if err := downloadAndExtractRepo(tarUrl, appDir); err != nil {
-				UpdateMu.Lock()
-				LastUpdateLog = fmt.Sprintf("❌ Lỗi tải & giải nén bản cập nhật: %v", err)
-				UpdateMu.Unlock()
-				return
-			}
-
-			_ = ensureGoCompiler()
-			if _, err := exec.LookPath("go"); err == nil {
-				UpdateMu.Lock()
-				LastUpdateLog = "⚙️ Đang biên dịch binary mới..."
-				UpdateMu.Unlock()
-				buildOut, err := exec.Command("go", "build", "-o", filepath.Join(appDir, "dockpulse"), filepath.Join(appDir, "main.go")).CombinedOutput()
-				if err != nil {
-					UpdateMu.Lock()
-					LastUpdateLog = fmt.Sprintf("❌ Lỗi build: %v (%s)", err, string(buildOut))
-					UpdateMu.Unlock()
-					return
-				}
-			}
+			return
 		}
 
 		UpdateMu.Lock()
@@ -236,6 +175,111 @@ func ApplyUpdate() error {
 			os.Exit(0)
 		}
 	}()
+
+	return nil
+}
+
+// ApplyUpdateSync executes the self-update synchronously (for CLI dockpulse --update)
+func ApplyUpdateSync(printProgress bool) error {
+	UpdateMu.Lock()
+	if IsUpdating {
+		UpdateMu.Unlock()
+		return fmt.Errorf("hệ thống đang trong quá trình cập nhật, vui lòng đợi")
+	}
+	IsUpdating = true
+	UpdateMu.Unlock()
+
+	defer func() {
+		UpdateMu.Lock()
+		IsUpdating = false
+		UpdateMu.Unlock()
+	}()
+
+	if err := executeSelfUpdate(printProgress); err != nil {
+		return err
+	}
+
+	if printProgress {
+		fmt.Println("🔄 Đang khởi động lại dịch vụ dockpulse...")
+	}
+	_ = restartService()
+	return nil
+}
+
+func executeSelfUpdate(printProgress bool) error {
+	appDir, err := os.Getwd()
+	if err != nil {
+		ex, _ := os.Executable()
+		appDir = filepath.Dir(ex)
+	}
+
+	log.Printf("📦 Executing DockPulse Auto-Update in directory: %s\n", appDir)
+
+	// Case A: Git Repository Update
+	if _, err := os.Stat(filepath.Join(appDir, ".git")); err == nil {
+		if printProgress {
+			fmt.Println("📥 Đang kéo mã nguồn mới nhất từ GitHub qua Git...")
+		}
+		UpdateMu.Lock()
+		LastUpdateLog = "📥 Đang tải mã nguồn mới nhất từ GitHub qua Git..."
+		UpdateMu.Unlock()
+
+		pullOut, err := exec.Command("git", "pull", "origin", "main").CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("lỗi git pull: %v (%s)", err, string(pullOut))
+		}
+
+		// Ensure Go compiler is ready
+		if printProgress {
+			fmt.Println("🔍 Kiểm tra trình biên dịch Go...")
+		}
+		_ = ensureGoCompiler()
+
+		// Rebuild Go binary
+		if _, err := exec.LookPath("go"); err == nil {
+			if printProgress {
+				fmt.Println("⚙️ Đang biên dịch phiên bản Go binary mới...")
+			}
+			UpdateMu.Lock()
+			LastUpdateLog = "⚙️ Đang biên dịch phiên bản Go binary mới..."
+			UpdateMu.Unlock()
+
+			buildOut, err := exec.Command("go", "build", "-o", filepath.Join(appDir, "dockpulse"), filepath.Join(appDir, "main.go")).CombinedOutput()
+			if err != nil {
+				return fmt.Errorf("lỗi biên dịch Go: %v (%s)", err, string(buildOut))
+			}
+		}
+	} else {
+		// Case B: Standalone / Tarball Update
+		if printProgress {
+			fmt.Println("📥 Đang tải gói cập nhật (Tarball) từ GitHub...")
+		}
+		UpdateMu.Lock()
+		LastUpdateLog = "📥 Đang tải gói cập nhật (Tarball) từ GitHub..."
+		UpdateMu.Unlock()
+
+		tarUrl := fmt.Sprintf("https://github.com/%s/archive/refs/heads/main.tar.gz", GitHubRepo)
+		if err := downloadAndExtractRepo(tarUrl, appDir); err != nil {
+			return fmt.Errorf("lỗi tải & giải nén bản cập nhật: %v", err)
+		}
+
+		if printProgress {
+			fmt.Println("🔍 Kiểm tra trình biên dịch Go...")
+		}
+		_ = ensureGoCompiler()
+		if _, err := exec.LookPath("go"); err == nil {
+			if printProgress {
+				fmt.Println("⚙️ Đang biên dịch binary mới...")
+			}
+			UpdateMu.Lock()
+			LastUpdateLog = "⚙️ Đang biên dịch binary mới..."
+			UpdateMu.Unlock()
+			buildOut, err := exec.Command("go", "build", "-o", filepath.Join(appDir, "dockpulse"), filepath.Join(appDir, "main.go")).CombinedOutput()
+			if err != nil {
+				return fmt.Errorf("lỗi build binary: %v (%s)", err, string(buildOut))
+			}
+		}
+	}
 
 	return nil
 }

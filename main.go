@@ -44,7 +44,7 @@ func main() {
 				return
 			}
 			fmt.Println("🚀 Bắt đầu nâng cấp phiên bản mới...")
-			if err := updater.ApplyUpdate(); err != nil {
+			if err := updater.ApplyUpdateSync(true); err != nil {
 				log.Fatalf("❌ Lỗi nâng cấp: %v", err)
 			}
 			fmt.Println("🎉 Nâng cấp hoàn tất! Dịch vụ đang khởi động lại.")
