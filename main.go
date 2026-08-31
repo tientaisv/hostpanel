@@ -17,6 +17,7 @@ import (
 	"dockpulse/pkg/docker"
 	"dockpulse/pkg/metrics"
 	"dockpulse/pkg/system"
+	"dockpulse/pkg/updater"
 	"dockpulse/pkg/ws"
 )
 
@@ -31,11 +32,34 @@ func main() {
 			}
 			fmt.Println("🎉 Đã cài đặt và kích hoạt Systemd Service thành công! Dịch vụ đang chạy ngầm.")
 			return
+		case "--update", "-u", "update":
+			fmt.Println("🔍 Đang kiểm tra bản cập nhật mới nhất từ GitHub...")
+			info, err := updater.CheckUpdate(true)
+			if err != nil {
+				log.Fatalf("❌ Lỗi kiểm tra cập nhật: %v", err)
+			}
+			fmt.Printf("📦 Phiên bản hiện tại: %s | Phiên bản mới nhất: %s\n", info.CurrentVersion, info.LatestVersion)
+			if !info.HasUpdate {
+				fmt.Println("✅ Bạn đang chạy phiên bản mới nhất!")
+				return
+			}
+			fmt.Println("🚀 Bắt đầu nâng cấp phiên bản mới...")
+			if err := updater.ApplyUpdate(); err != nil {
+				log.Fatalf("❌ Lỗi nâng cấp: %v", err)
+			}
+			fmt.Println("🎉 Nâng cấp hoàn tất! Dịch vụ đang khởi động lại.")
+			return
+		case "--version", "-v", "version":
+			fmt.Printf("DockPulse %s\n", updater.CurrentVersion)
+			return
 		}
 	}
 
 	// Tự động kiểm tra và cài đặt Systemd Service nếu chưa có
 	system.CheckAndAutoInstallIfMissing()
+
+	// Khởi động trình tự động kiểm tra bản cập nhật ngầm
+	updater.StartBackgroundChecker()
 
 	client = docker.NewClient("")
 	engine := client.GetEngineInfo()
@@ -90,6 +114,9 @@ func main() {
 	mux.HandleFunc("/api/system/fail2ban/install", authMiddleware(handleFail2banInstall))
 	mux.HandleFunc("/api/system/fail2ban/unban", authMiddleware(handleFail2banUnban))
 	mux.HandleFunc("/api/system/fail2ban/ban", authMiddleware(handleFail2banBan))
+	mux.HandleFunc("/api/system/update/check", authMiddleware(handleUpdateCheck))
+	mux.HandleFunc("/api/system/update/apply", authMiddleware(handleUpdateApply))
+	mux.HandleFunc("/api/system/update/config", authMiddleware(handleUpdateConfig))
 	mux.HandleFunc("/api/system/swap/reset", authMiddleware(handleResetSwap))
 	mux.HandleFunc("/api/system/pwmconfig", authMiddleware(handlePwmConfig))
 
@@ -677,6 +704,47 @@ func handleFail2banBan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonResponse(w, 200, map[string]string{"status": "ok", "message": fmt.Sprintf("Đã thêm quy tắc chặn IP %s thành công!", req.IP)})
+}
+
+func handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
+	force := r.URL.Query().Get("force") == "true"
+	info, err := updater.CheckUpdate(force)
+	if err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, 200, info)
+}
+
+func handleUpdateApply(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	if err := updater.ApplyUpdate(); err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, 200, map[string]string{
+		"status":  "updating",
+		"message": "Quá trình nâng cấp đã bắt đầu. Dịch vụ sẽ tự động khởi động lại sau khi hoàn tất.",
+	})
+}
+
+func handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "POST" {
+		var req struct {
+			AutoUpdateEnabled bool `json:"auto_update_enabled"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			jsonResponse(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		updater.AutoUpdateEnabled = req.AutoUpdateEnabled
+		jsonResponse(w, 200, map[string]interface{}{"status": "ok", "auto_update_enabled": updater.AutoUpdateEnabled})
+		return
+	}
+	jsonResponse(w, 200, map[string]interface{}{"auto_update_enabled": updater.AutoUpdateEnabled})
 }
 
 func handleAIDiagnose(w http.ResponseWriter, r *http.Request) {
