@@ -54,13 +54,17 @@ document.addEventListener("DOMContentLoaded", () => {
     if (subtitleEl && subtitlesMap[target]) subtitleEl.textContent = subtitlesMap[target];
 
     // Trigger load for active section
+    if (target === "dashboard" && typeof loadWarmupStatus === "function") loadWarmupStatus();
     if (target === "server-info") loadFullServerInfo();
     if (target === "containers") loadContainers();
     if (target === "compose") loadComposeStacks();
     if (target === "images") loadImages();
     if (target === "volumes") loadVolumes();
     if (target === "host-activity") loadHostProcesses();
-    if (target === "security") loadSecurityAudit();
+    if (target === "security") {
+      loadSecurityAudit();
+      if (typeof loadScannerStatus === "function") loadScannerStatus();
+    }
     if (target === "file-manager") loadFiles();
     if (target === "network-ports") loadNetworkPorts();
     if (target === "host-terminal-tab") initHostTabTerminal();

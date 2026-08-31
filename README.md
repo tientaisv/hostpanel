@@ -32,6 +32,16 @@
 ### 🤖 6. Smart AI Troubleshooting Assistant
 - Trợ lý thông minh hỗ trợ phân tích sự cố tự động, đọc log container để đưa ra gợi ý xử lý và đánh giá sức khỏe toàn diện hệ thống (Health Audit).
 
+### 🛡️ 7. Quét Webshell, Backdoor & Virus Máy Chủ (Host Malware Scanner)
+- **Động cơ phân tích đa tầng (Heuristic Engine)**: Tự động phát hiện PHP Webshells, Reverse Shells (Bash TCP, Netcat, Python socket), Crypto Miners (XMRig, C3Pool), Binary trái phép trong `/tmp` và Cronjob Backdoor.
+- **Xử lý an toàn**: Xem trước trích đoạn mã nguồn (Code Preview), cơ chế **Cách Ly An Toàn (Quarantine)** tự động gỡ bỏ quyền thực thi (`chmod 0000`) chuyển vào kho lưu trữ bảo mật `/root/.dockpulse_quarantine`, hoặc Xóa vĩnh viễn (Delete).
+- **Tích hợp ClamAV Antivirus**: Hỗ trợ 1-click cài đặt ClamAV Antivirus và quét với cơ sở dữ liệu hàng triệu virus quốc tế.
+
+### 🔥 8. Chế Độ Làm Nóng Máy Chủ Chống Thu Hồi VPS Rảnh Rỗi (Anti-Idle Server Warmup)
+- **Giữ VPS luôn hoạt động**: Tự động phát hiện nếu CPU duy trì < 30% trong 30 phút, hệ thống tự động chạy tác vụ tính toán SHA-256 an toàn trong RAM (0 I/O Đĩa/Mạng) để duy trì CPU ở mức ~42-48%.
+- **Quy trình tuần hoàn an toàn**: Chạy 30 phút $\rightarrow$ Nghỉ 30 phút $\rightarrow$ Tự động kiểm tra lại.
+- **Cơ chế an toàn tự động (Auto Back-off)**: Nếu người dùng hoặc ứng dụng khác đẩy CPU > 65%, tác vụ làm nóng tự động tạm dừng ngay lập tức để ưu tiên tài nguyên cho hệ thống.
+
 ---
 
 ## 🛠️ Công Nghệ Sử Dụng

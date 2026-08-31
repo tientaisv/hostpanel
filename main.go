@@ -69,6 +69,8 @@ func main() {
 	metrics.InitLogger(client)
 	ai.InitRotater(".env")
 	auth.InitAuth("config.json")
+	system.InitWarmupManager()
+	system.InitScannerManager()
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -118,6 +120,17 @@ func main() {
 	mux.HandleFunc("/api/system/firewall/toggle", authMiddleware(handleFirewallToggle))
 	mux.HandleFunc("/api/system/firewall/rule/add", authMiddleware(handleFirewallRuleAdd))
 	mux.HandleFunc("/api/system/firewall/rule/delete", authMiddleware(handleFirewallRuleDelete))
+	mux.HandleFunc("/api/system/warmup/status", authMiddleware(handleWarmupStatus))
+	mux.HandleFunc("/api/system/warmup/toggle", authMiddleware(handleWarmupToggle))
+	mux.HandleFunc("/api/system/warmup/test", authMiddleware(handleWarmupTest))
+	mux.HandleFunc("/api/system/warmup/config", authMiddleware(handleWarmupConfig))
+	mux.HandleFunc("/api/system/scanner/status", authMiddleware(handleScannerStatus))
+	mux.HandleFunc("/api/system/scanner/start", authMiddleware(handleScannerStart))
+	mux.HandleFunc("/api/system/scanner/abort", authMiddleware(handleScannerAbort))
+	mux.HandleFunc("/api/system/scanner/threat/quarantine", authMiddleware(handleScannerThreatQuarantine))
+	mux.HandleFunc("/api/system/scanner/threat/delete", authMiddleware(handleScannerThreatDelete))
+	mux.HandleFunc("/api/system/scanner/threat/view", authMiddleware(handleScannerThreatView))
+	mux.HandleFunc("/api/system/scanner/clamav/install", authMiddleware(handleScannerClamAVInstall))
 	mux.HandleFunc("/api/system/update/check", authMiddleware(handleUpdateCheck))
 	mux.HandleFunc("/api/system/update/apply", authMiddleware(handleUpdateApply))
 	mux.HandleFunc("/api/system/update/config", authMiddleware(handleUpdateConfig))
@@ -884,6 +897,218 @@ func handleFirewallRuleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonResponse(w, 200, map[string]string{"status": "ok", "message": "Đã xóa quy tắc tường lửa thành công!"})
+}
+
+func handleWarmupStatus(w http.ResponseWriter, r *http.Request) {
+	status := system.GlobalWarmupManager.GetStatus()
+	jsonResponse(w, 200, status)
+}
+
+func handleWarmupToggle(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	var req struct {
+		Enable bool `json:"enable"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonResponse(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	status, err := system.GlobalWarmupManager.Toggle(req.Enable)
+	if err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	msg := "Đã tắt chế độ làm nóng máy chủ."
+	if req.Enable {
+		msg = "Đã kích hoạt chế độ làm nóng máy chủ an toàn (Tự động chạy khi CPU < 30% trong 30 phút, giữ CPU ~45%, chu kỳ 30m)!"
+	}
+	jsonResponse(w, 200, map[string]interface{}{
+		"status":  "ok",
+		"message": msg,
+		"data":    status,
+	})
+}
+
+func handleWarmupTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	var req struct {
+		DurationSec int `json:"duration_sec"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	dur := req.DurationSec
+	if dur <= 0 {
+		dur = 60
+	}
+	status, err := system.GlobalWarmupManager.TriggerTest(dur)
+	if err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, 200, map[string]interface{}{
+		"status":  "ok",
+		"message": fmt.Sprintf("Đang kích hoạt chạy thử nghiệm làm nóng CPU an toàn trong %d giây...", dur),
+		"data":    status,
+	})
+}
+
+func handleWarmupConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	var req system.WarmupConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonResponse(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	status, err := system.GlobalWarmupManager.UpdateConfig(req)
+	if err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, 200, map[string]interface{}{
+		"status":  "ok",
+		"message": "Đã lưu cấu hình làm nóng máy chủ thành công!",
+		"data":    status,
+	})
+}
+
+func handleScannerStatus(w http.ResponseWriter, r *http.Request) {
+	status := system.GlobalScannerManager.GetStatus()
+	jsonResponse(w, 200, status)
+}
+
+func handleScannerStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	var req struct {
+		TargetType string `json:"target_type"` // "QUICK", "CUSTOM", "FULL"
+		CustomPath string `json:"custom_path"`
+		UseClamAV  bool   `json:"use_clamav"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonResponse(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	targetType := system.ScanTargetType(strings.ToUpper(strings.TrimSpace(req.TargetType)))
+	report, err := system.GlobalScannerManager.StartScan(targetType, req.CustomPath, req.UseClamAV)
+	if err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, 200, map[string]interface{}{
+		"status":  "ok",
+		"message": "Đã bắt đầu phiên quét mã độc máy chủ!",
+		"data":    report,
+	})
+}
+
+func handleScannerAbort(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	report, err := system.GlobalScannerManager.AbortScan()
+	if err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, 200, map[string]interface{}{
+		"status":  "ok",
+		"message": "Đã hủy phiên quét mã độc thành công!",
+		"data":    report,
+	})
+}
+
+func handleScannerThreatQuarantine(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	var req struct {
+		FilePath string `json:"file_path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.FilePath == "" {
+		jsonResponse(w, 400, map[string]string{"error": "Đường dẫn file không hợp lệ"})
+		return
+	}
+	if err := system.GlobalScannerManager.QuarantineThreat(req.FilePath); err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, 200, map[string]string{
+		"status":  "ok",
+		"message": fmt.Sprintf("Đã cách ly tệp độc hại an toàn: %s (Đã gỡ quyền 0000 và chuyển vào kho cách ly)", req.FilePath),
+	})
+}
+
+func handleScannerThreatDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	var req struct {
+		FilePath string `json:"file_path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.FilePath == "" {
+		jsonResponse(w, 400, map[string]string{"error": "Đường dẫn file không hợp lệ"})
+		return
+	}
+	if err := system.GlobalScannerManager.DeleteThreat(req.FilePath); err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, 200, map[string]string{
+		"status":  "ok",
+		"message": fmt.Sprintf("Đã xóa vĩnh viễn tệp độc hại: %s", req.FilePath),
+	})
+}
+
+func handleScannerThreatView(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	var req struct {
+		FilePath string `json:"file_path"`
+		MaxBytes int    `json:"max_bytes"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.FilePath == "" {
+		jsonResponse(w, 400, map[string]string{"error": "Đường dẫn file không hợp lệ"})
+		return
+	}
+	snippet, err := system.GlobalScannerManager.ReadFileSnippet(req.FilePath, req.MaxBytes)
+	if err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, 200, map[string]interface{}{
+		"status":    "ok",
+		"file_path": req.FilePath,
+		"snippet":   snippet,
+	})
+}
+
+func handleScannerClamAVInstall(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	go func() {
+		_ = system.GlobalScannerManager.InstallClamAV()
+	}()
+	jsonResponse(w, 200, map[string]string{
+		"status":  "ok",
+		"message": "Đang tiến hành cài đặt ClamAV Antivirus ngầm trên máy chủ. Quá trình này có thể mất 1-2 phút.",
+	})
 }
 
 func handleAIDiagnose(w http.ResponseWriter, r *http.Request) {

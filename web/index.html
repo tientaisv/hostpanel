@@ -180,6 +180,9 @@
         </div>
       </div>
 
+      <!-- SERVER KEEP-WARM / ANTI-IDLE WIDGET -->
+      <div id="warmup-widget-container"></div>
+
       <!-- CONTAINER ENGINE RESOURCE POOL -->
       <div class="data-card" style="margin-bottom: 24px;">
         <div class="card-header">
@@ -996,6 +999,9 @@ Bạn có thể bấm nút "🛡️ System Health AI Audit" ở trên để tôi
         </div>
       </div>
 
+      <!-- HOST WEBSHELL, MALWARE & VIRUS SCANNER -->
+      <div id="host-scanner-container" style="margin-top: 24px;"></div>
+
       <!-- Security Threats & Recommended Actions -->
       <div class="data-card" style="margin-top: 24px;">
         <div class="card-header">
@@ -1297,6 +1303,121 @@ Bạn có thể bấm nút "🛡️ System Health AI Audit" ở trên để tôi
     </div>
   </div>
 
+  <!-- MODAL: CONFIGURE SERVER WARM-UP (ANTI-IDLE) -->
+  <div class="modal-overlay" id="modal-warmup-config">
+    <div class="modal-content" style="max-width: 520px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.1rem;">
+          <span>🔥</span> Cài Đặt Chế Độ Làm Nóng Máy Chủ
+        </div>
+        <button class="btn btn-secondary" onclick="closeModal('modal-warmup-config')">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 18px;">
+          Tùy chỉnh các ngưỡng tải CPU và chu kỳ thời gian làm nóng / nghỉ ngơi tự động.
+        </p>
+
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+            <div>
+              <label style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">Ngưỡng kích hoạt (% CPU):</label>
+              <input type="number" id="warmup-cfg-low-cpu" class="search-box" min="5" max="80" value="30" style="width: 100%; padding: 8px 12px;">
+              <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 4px;">Kích hoạt khi CPU &lt; mức này</div>
+            </div>
+
+            <div>
+              <label style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">CPU mục tiêu làm nóng (%):</label>
+              <input type="number" id="warmup-cfg-target-cpu" class="search-box" min="35" max="75" value="45" style="width: 100%; padding: 8px 12px;">
+              <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 4px;">Duy trì ổn định &gt; 40%</div>
+            </div>
+          </div>
+
+          <div>
+            <label style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">Ngưỡng bảo vệ quá tải (% CPU Max):</label>
+            <input type="number" id="warmup-cfg-max-cpu" class="search-box" min="40" max="95" value="65" style="width: 100%; padding: 8px 12px;">
+            <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 4px;">Tự động ngắt/giảm tải ngay nếu tổng CPU vượt quá mức này để nhường tài nguyên</div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+            <div>
+              <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">Thời gian đo (Phút):</label>
+              <input type="number" id="warmup-cfg-idle-mins" class="search-box" min="1" max="120" value="30" style="width: 100%; padding: 8px 10px;">
+            </div>
+
+            <div>
+              <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">Phiên chạy (Phút):</label>
+              <input type="number" id="warmup-cfg-warm-mins" class="search-box" min="1" max="120" value="30" style="width: 100%; padding: 8px 10px;">
+            </div>
+
+            <div>
+              <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">Nghỉ ngơi (Phút):</label>
+              <input type="number" id="warmup-cfg-cool-mins" class="search-box" min="1" max="120" value="30" style="width: 100%; padding: 8px 10px;">
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px;">
+          <button class="btn btn-secondary" onclick="closeModal('modal-warmup-config')">Hủy Bỏ</button>
+          <button class="btn btn-primary" onclick="submitWarmupConfig()" style="padding: 8px 18px;">💾 Lưu Cấu Hình</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: VIEW MALWARE CODE SNIPPET -->
+  <div class="modal-overlay" id="modal-view-malware-code">
+    <div class="modal-content" style="max-width: 780px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.1rem; color: #f87171;">
+          <span>👁️</span> Trích Đoạn Mã Nguồn Nghi Vấn (Code Preview)
+        </div>
+        <button class="btn btn-secondary" onclick="closeModal('modal-view-malware-code')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 8px; font-family: var(--font-mono); word-break: break-all;">
+          Đường dẫn: <strong style="color: var(--text-main);" id="modal-malware-filepath">--</strong>
+        </div>
+        <div style="background: #06090e; border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 14px; max-height: 420px; overflow-y: auto;">
+          <pre id="modal-malware-code" style="margin: 0; font-family: var(--font-mono); font-size: 0.85rem; color: #fca5a5; white-space: pre-wrap; word-break: break-all;"></pre>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+          <button class="btn btn-secondary" onclick="closeModal('modal-view-malware-code')">Đóng</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: CUSTOM SCAN DIRECTORY -->
+  <div class="modal-overlay" id="modal-custom-scan-path">
+    <div class="modal-content" style="max-width: 480px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.1rem;">
+          <span>📁</span> Quét Thư Mục Tùy Chọn
+        </div>
+        <button class="btn btn-secondary" onclick="closeModal('modal-custom-scan-path')">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
+          Nhập đường dẫn tuyệt đối của thư mục cần quét mã độc và webshell:
+        </p>
+        <div style="margin-bottom: 16px;">
+          <label style="display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">Đường dẫn thư mục (Folder Path):</label>
+          <input type="text" id="input-custom-scan-path" class="search-box" value="/var/www" placeholder="Ví dụ: /var/www, /home, /data/uploads" style="width: 100%; padding: 8px 12px;">
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 20px;">
+          <input type="checkbox" id="cb-custom-scan-clamav" style="cursor: pointer;">
+          <label for="cb-custom-scan-clamav" style="font-size: 0.85rem; color: var(--text-muted); cursor: pointer;">
+            Bật quét nâng cao với ClamAV Antivirus (nếu có)
+          </label>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button class="btn btn-secondary" onclick="closeModal('modal-custom-scan-path')">Hủy Bỏ</button>
+          <button class="btn btn-primary" onclick="submitCustomScan()" style="padding: 8px 18px;">🚀 Bắt Đầu Quét</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="js/app.js?v=4.0"></script>
   <script src="js/containers.js?v=4.0"></script>
   <script src="js/logs.js?v=4.0"></script>
@@ -1306,12 +1427,14 @@ Bạn có thể bấm nút "🛡️ System Health AI Audit" ở trên để tôi
   <script src="js/volumes.js?v=4.0"></script>
   <script src="js/host_activity.js?v=4.0"></script>
   <script src="js/security.js?v=4.0"></script>
+  <script src="js/scanner.js?v=4.0"></script>
   <script src="js/files.js?v=4.0"></script>
   <script src="js/networks.js?v=4.0"></script>
   <script src="js/ai.js?v=4.0"></script>
   <script src="js/monitoring.js?v=4.0"></script>
   <script src="js/updater.js?v=4.0"></script>
   <script src="js/firewall.js?v=4.0"></script>
+  <script src="js/warmup.js?v=4.0"></script>
   <script src="js/server_info.js?v=4.0"></script>
   <script>
     async function logoutSystem() {

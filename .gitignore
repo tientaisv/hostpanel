@@ -7,3 +7,7 @@ dockpulse
 /tmp
 .idea/
 .vscode/
+warmup_config.json
+scanner_history.json
+pkg/system/warmup_config.json
+pkg/system/scanner_history.json
