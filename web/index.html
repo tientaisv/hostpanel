@@ -750,6 +750,24 @@ Bạn có thể bấm nút "🛡️ System Health AI Audit" ở trên để tôi
           </div>
         </div>
       </div>
+
+      <!-- Fail2ban Intrusion Prevention & Firewall Management -->
+      <div class="data-card" style="margin-top: 24px;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <div class="card-title">
+            <span>🛡️</span> Fail2ban Firewall & Phòng Chống Brute-Force
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button class="btn btn-secondary" onclick="promptManualBan()" style="font-size: 0.85rem; padding: 6px 12px;">🚫 Ban IP Thủ Công</button>
+            <button class="btn btn-secondary" onclick="loadFail2banStatus()" style="font-size: 0.85rem; padding: 6px 12px;">🔄 Làm Mới</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="fail2ban-container">
+            <div style="text-align: center; color: var(--text-muted); padding: 20px;">Đang kiểm tra trạng thái Fail2ban...</div>
+          </div>
+        </div>
+      </div>
     </section>
   </main>
 

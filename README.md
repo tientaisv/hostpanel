@@ -50,24 +50,36 @@
 - Go 1.13+ (để biên dịch nguồn)
 - Docker Engine đã được cài đặt và đang chạy socket `/var/run/docker.sock`.
 
-### ⚡ 2. Cài Đặt Nhanh
+### ⚡ 2. Cài Đặt Tự Động 1-Click (Khuyên Dùng)
+
+Cài đặt nhanh toàn bộ DockPulse, tự động tạo Systemd Service chạy ngầm và tùy chọn kích hoạt **Fail2ban** bảo vệ SSH/Web server:
+
+```bash
+# Chạy trực tiếp qua One-line installer script
+curl -fsSL https://raw.githubusercontent.com/tientaisv/hostpanel/main/install.sh | sudo bash
+```
+
+> **Tùy chọn nâng cao:**
+> - Bật sẵn Fail2ban không cần hỏi: `sudo bash install.sh --with-fail2ban`
+> - Đổi cổng mặc định: `sudo bash install.sh --port=8080`
+
+---
+
+### 🛠️ 3. Cài Đặt Thủ Công Từ Source
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/your-username/dockpulse.git
-cd dockpulse
+git clone https://github.com/tientaisv/hostpanel.git
+cd hostpanel
 
 # 2. Tạo tệp cấu hình .env từ mẫu .env.example
 cp .env.example .env
 
-# 3. Chỉnh sửa thông số tài khoản và port trong .env
-nano .env
-
-# 4. Biên dịch ứng dụng
+# 3. Biên dịch ứng dụng
 go build -o dockpulse main.go
 
-# 5. Chạy thử nghiệm
-./dockpulse
+# 4. Tự động cài đặt Systemd Service chạy ngầm
+./dockpulse --install-service
 ```
 
 ---

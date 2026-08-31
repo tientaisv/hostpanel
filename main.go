@@ -86,6 +86,10 @@ func main() {
 	mux.HandleFunc("/api/system/processes/kill", authMiddleware(handleProcessKill))
 	mux.HandleFunc("/api/system/security", authMiddleware(handleSecurityAudit))
 	mux.HandleFunc("/api/system/security/block-ip", authMiddleware(handleBlockIP))
+	mux.HandleFunc("/api/system/fail2ban/status", authMiddleware(handleFail2banStatus))
+	mux.HandleFunc("/api/system/fail2ban/install", authMiddleware(handleFail2banInstall))
+	mux.HandleFunc("/api/system/fail2ban/unban", authMiddleware(handleFail2banUnban))
+	mux.HandleFunc("/api/system/fail2ban/ban", authMiddleware(handleFail2banBan))
 	mux.HandleFunc("/api/system/swap/reset", authMiddleware(handleResetSwap))
 	mux.HandleFunc("/api/system/pwmconfig", authMiddleware(handlePwmConfig))
 
@@ -611,6 +615,68 @@ func handleBlockIP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonResponse(w, 200, map[string]string{"status": "blocked", "ip": req.IP})
+}
+
+func handleFail2banStatus(w http.ResponseWriter, r *http.Request) {
+	status, err := system.GetFail2banStatus()
+	if err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, 200, status)
+}
+
+func handleFail2banInstall(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	clientIP := system.ExtractClientIP(r)
+	if err := system.InstallAndConfigureFail2ban(clientIP); err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, 200, map[string]string{"status": "ok", "message": "Fail2ban đã được cài đặt và kích hoạt bảo vệ thành công!"})
+}
+
+func handleFail2banUnban(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	var req struct {
+		Jail string `json:"jail"`
+		IP   string `json:"ip"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.IP == "" {
+		jsonResponse(w, 400, map[string]string{"error": "invalid request body or missing IP"})
+		return
+	}
+	if err := system.UnbanIP(req.Jail, req.IP); err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, 200, map[string]string{"status": "ok", "message": fmt.Sprintf("Đã mở chặn IP %s thành công!", req.IP)})
+}
+
+func handleFail2banBan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	var req struct {
+		Jail string `json:"jail"`
+		IP   string `json:"ip"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.IP == "" {
+		jsonResponse(w, 400, map[string]string{"error": "invalid request body or missing IP"})
+		return
+	}
+	if err := system.BanIP(req.Jail, req.IP); err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, 200, map[string]string{"status": "ok", "message": fmt.Sprintf("Đã thêm quy tắc chặn IP %s thành công!", req.IP)})
 }
 
 func handleAIDiagnose(w http.ResponseWriter, r *http.Request) {

@@ -42,7 +42,7 @@ type Client struct {
 func newSingleClient(socketPath string) (*SingleEngineClient, error) {
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return net.DialTimeout("unix", socketPath, 5*time.Second)
+			return net.DialTimeout("unix", socketPath, 3*time.Second)
 		},
 	}
 
@@ -50,7 +50,7 @@ func newSingleClient(socketPath string) (*SingleEngineClient, error) {
 		socketPath: socketPath,
 		httpClient: &http.Client{
 			Transport: transport,
-			Timeout:   0,
+			Timeout:   5 * time.Second,
 		},
 		engineInfo: EngineInfo{
 			Name:       "Container Engine",
