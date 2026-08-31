@@ -78,9 +78,31 @@ func CheckUpdate(force bool) (*UpdateInfo, error) {
 		LastUpdateLog:     LastUpdateLog,
 	}
 
-	client := &http.Client{Timeout: 8 * time.Second}
+	// 1. If inside a git repository, check git remote directly (works for both public and private repos)
+	localSHA := getLocalGitSHA()
+	if localSHA != "" {
+		remoteOut, err := exec.Command("git", "ls-remote", "origin", "-h", "refs/heads/main").Output()
+		if err == nil && len(remoteOut) > 0 {
+			fields := strings.Fields(string(remoteOut))
+			if len(fields) > 0 {
+				remoteSHA := fields[0]
+				shortRemote := remoteSHA
+				if len(shortRemote) > 7 {
+					shortRemote = shortRemote[:7]
+				}
+				info.LatestCommitSHA = remoteSHA
+				info.LatestVersion = fmt.Sprintf("Commit %s", shortRemote)
+				info.ReleaseNotes = "Bản cập nhật mới nhất từ nhánh main trên GitHub."
 
-	// 1. Try checking latest GitHub Release
+				if localSHA != remoteSHA && !strings.HasPrefix(localSHA, remoteSHA) && !strings.HasPrefix(remoteSHA, localSHA) {
+					info.HasUpdate = true
+				}
+			}
+		}
+	}
+
+	// 2. Try checking GitHub Release API for formal releases
+	client := &http.Client{Timeout: 5 * time.Second}
 	reqRel, _ := http.NewRequest("GET", fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", GitHubRepo), nil)
 	reqRel.Header.Set("User-Agent", "DockPulse-AutoUpdater")
 	respRel, err := client.Do(reqRel)
@@ -97,50 +119,10 @@ func CheckUpdate(force bool) (*UpdateInfo, error) {
 			if rel.TagName != CurrentVersion {
 				info.HasUpdate = true
 			}
-			cachedUpdateInfo = info
-			lastCheckTime = time.Now()
-			return info, nil
 		}
 	}
 	if respRel != nil {
 		respRel.Body.Close()
-	}
-
-	// 2. Fallback: Check latest commit on main branch
-	reqCommit, _ := http.NewRequest("GET", fmt.Sprintf("https://api.github.com/repos/%s/commits/main", GitHubRepo), nil)
-	reqCommit.Header.Set("User-Agent", "DockPulse-AutoUpdater")
-	respCommit, err := client.Do(reqCommit)
-	if err == nil && respCommit.StatusCode == 200 {
-		defer respCommit.Body.Close()
-		var commit GitHubCommit
-		if err := json.NewDecoder(respCommit.Body).Decode(&commit); err == nil && commit.SHA != "" {
-			shortSHA := commit.SHA
-			if len(shortSHA) > 7 {
-				shortSHA = shortSHA[:7]
-			}
-			info.LatestVersion = fmt.Sprintf("Commit %s", shortSHA)
-			info.LatestCommitSHA = commit.SHA
-			info.ReleaseNotes = commit.Commit.Message
-			info.PublishedAt = commit.Commit.Author.Date
-
-			// Check local git SHA if available
-			localSHA := getLocalGitSHA()
-			if localSHA != "" {
-				if !strings.HasPrefix(commit.SHA, localSHA) && !strings.HasPrefix(localSHA, commit.SHA) {
-					info.HasUpdate = true
-				}
-			} else {
-				// If not git repo, compare with CurrentVersion or assume latest
-				info.HasUpdate = false
-			}
-
-			cachedUpdateInfo = info
-			lastCheckTime = time.Now()
-			return info, nil
-		}
-	}
-	if respCommit != nil {
-		respCommit.Body.Close()
 	}
 
 	cachedUpdateInfo = info
