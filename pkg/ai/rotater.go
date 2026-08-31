@@ -3,6 +3,7 @@ package ai
 import (
 	"bufio"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 )
@@ -18,11 +19,14 @@ var GlobalRotater *KeyRotater
 
 func InitRotater(paths ...string) {
 	if len(paths) == 0 {
-		paths = []string{
-			"/root/hostcontrol/.env",
-			".env",
-			"/home/data/appck/.env",
-			"/home/data/taissh/.env",
+		ex, _ := os.Executable()
+		exDir := ""
+		if ex != "" {
+			exDir = filepath.Dir(ex)
+		}
+		paths = []string{".env"}
+		if exDir != "" && exDir != "." {
+			paths = append(paths, filepath.Join(exDir, ".env"))
 		}
 	}
 

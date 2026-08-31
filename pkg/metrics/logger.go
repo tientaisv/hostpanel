@@ -79,9 +79,7 @@ func (l *MetricsLogger) loadEnvConfig() {
 	if hostname == "" {
 		hostname = "default"
 	}
-	l.serverName = hostname
-
-	envFiles := []string{".env", "/root/hostcontrol/.env"}
+	envFiles := []string{".env"}
 	for _, envFile := range envFiles {
 		file, err := os.Open(envFile)
 		if err == nil {

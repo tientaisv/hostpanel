@@ -39,7 +39,7 @@ func InitAuth(configPath string) {
 	}
 
 	// Read from .env file if available
-	envFiles := []string{".env", "/root/hostcontrol/.env"}
+	envFiles := []string{".env"}
 	for _, envFile := range envFiles {
 		file, err := os.Open(envFile)
 		if err == nil {

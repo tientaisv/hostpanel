@@ -67,7 +67,7 @@ func main() {
 		engine.Name, engine.Version, engine.APIVersion, engine.SocketPath, engine.IsPodman)
 
 	metrics.InitLogger(client)
-	ai.InitRotater(".env", "/root/hostcontrol/.env", "/home/data/appck/.env", "/home/data/taissh/.env")
+	ai.InitRotater(".env")
 	auth.InitAuth("config.json")
 
 	port := os.Getenv("PORT")
