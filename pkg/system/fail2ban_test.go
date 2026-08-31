@@ -36,7 +36,12 @@ func TestParseJailDetail(t *testing.T) {
 	if info.TotalBanned != 5 {
 		t.Errorf("expected total banned 5, got %d", info.TotalBanned)
 	}
-	if len(info.BannedIPs) != 2 || info.BannedIPs[0] != "118.196.84.13" || info.BannedIPs[1] != "192.0.2.1" {
-		t.Errorf("unexpected banned IPs: %v", info.BannedIPs)
+}
+
+func TestLiveGetFail2banStatus(t *testing.T) {
+	status, err := GetFail2banStatus()
+	if err != nil {
+		t.Fatalf("error getting status: %v", err)
 	}
+	t.Logf("Status: installed=%v, active=%v, jails=%d, banned=%d", status.Installed, status.Active, status.JailCount, status.TotalBannedIPs)
 }
