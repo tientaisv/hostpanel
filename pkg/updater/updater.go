@@ -178,7 +178,10 @@ func ApplyUpdate() error {
 				return
 			}
 
-			// Rebuild Go binary if Go compiler exists
+			// Ensure Go compiler is ready
+			_ = ensureGoCompiler()
+
+			// Rebuild Go binary
 			if _, err := exec.LookPath("go"); err == nil {
 				UpdateMu.Lock()
 				LastUpdateLog = "⚙️ Đang biên dịch phiên bản Go binary mới..."
@@ -206,6 +209,7 @@ func ApplyUpdate() error {
 				return
 			}
 
+			_ = ensureGoCompiler()
 			if _, err := exec.LookPath("go"); err == nil {
 				UpdateMu.Lock()
 				LastUpdateLog = "⚙️ Đang biên dịch binary mới..."
@@ -234,6 +238,22 @@ func ApplyUpdate() error {
 	}()
 
 	return nil
+}
+
+func ensureGoCompiler() error {
+	if _, err := exec.LookPath("go"); err == nil {
+		return nil
+	}
+	log.Println("⚙️ Go compiler not found. Auto-installing lightweight Go runtime...")
+	if _, err := exec.LookPath("apt-get"); err == nil {
+		cmd := exec.Command("sh", "-c", "DEBIAN_FRONTEND=noninteractive apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq golang-go")
+		return cmd.Run()
+	} else if _, err := exec.LookPath("dnf"); err == nil {
+		return exec.Command("dnf", "install", "-y", "-q", "golang").Run()
+	} else if _, err := exec.LookPath("yum"); err == nil {
+		return exec.Command("yum", "install", "-y", "-q", "golang").Run()
+	}
+	return fmt.Errorf("no package manager found to install Go")
 }
 
 func restartService() error {
