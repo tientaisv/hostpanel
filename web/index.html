@@ -774,6 +774,24 @@ Bạn có thể bấm nút "🛡️ System Health AI Audit" ở trên để tôi
           </div>
         </div>
       </div>
+
+      <!-- System Firewall & Port Rules Management -->
+      <div class="data-card" style="margin-top: 24px;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <div class="card-title">
+            <span>🔥</span> Tường Lửa Máy Chủ (System Firewall Rules)
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button class="btn btn-primary" onclick="openAddRuleModal()" style="font-size: 0.85rem; padding: 6px 12px;">+ Thêm Quy Tắc</button>
+            <button class="btn btn-secondary" onclick="loadFirewallStatus()" style="font-size: 0.85rem; padding: 6px 12px;">🔄 Làm Mới</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="firewall-container">
+            <div style="text-align: center; color: var(--text-muted); padding: 20px;">Đang kiểm tra trạng thái tường lửa...</div>
+          </div>
+        </div>
+      </div>
     </section>
   </main>
 
@@ -980,6 +998,52 @@ Bạn có thể bấm nút "🛡️ System Health AI Audit" ở trên để tôi
     </div>
   </div>
 
+  <!-- MODAL: ADD FIREWALL RULE -->
+  <div class="modal-overlay" id="modal-firewall-rule">
+    <div class="modal-box" style="max-width: 500px;">
+      <div class="modal-header">
+        <div class="modal-title">🛡️ Thêm Quy Tắc Tường Lửa Mới</div>
+        <button class="btn btn-secondary" onclick="closeModal('modal-firewall-rule')">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 20px;">
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <div>
+            <label style="display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">Hành Động (Action):</label>
+            <select id="fw-action" class="search-box" style="width: 100%; padding: 8px 12px;">
+              <option value="ALLOW">🟢 Cho Phép (ALLOW)</option>
+              <option value="DENY">🔴 Chặn (DENY)</option>
+            </select>
+          </div>
+
+          <div>
+            <label style="display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">Cổng (Port) hoặc Dịch vụ:</label>
+            <input type="text" id="fw-port" class="search-box" placeholder="Ví dụ: 80, 443, 3306, 8080 hoặc All" style="width: 100%; padding: 8px 12px;">
+          </div>
+
+          <div>
+            <label style="display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">Giao Thức (Protocol):</label>
+            <select id="fw-proto" class="search-box" style="width: 100%; padding: 8px 12px;">
+              <option value="tcp">TCP (Khuyên dùng cho Web, SSH, DB)</option>
+              <option value="udp">UDP (DNS, VPN, Streaming)</option>
+              <option value="any">Cả hai (TCP / UDP)</option>
+            </select>
+          </div>
+
+          <div>
+            <label style="display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">IP Nguồn (Tùy chọn):</label>
+            <input type="text" id="fw-from" class="search-box" placeholder="Mặc định: Anywhere (hoặc nhập IP ví dụ 14.226.1.1)" style="width: 100%; padding: 8px 12px;">
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">Để trống hoặc ghi 'Anywhere' nếu cho phép tất cả mọi người.</div>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px;">
+          <button class="btn btn-secondary" onclick="closeModal('modal-firewall-rule')">Hủy Bỏ</button>
+          <button class="btn btn-primary" onclick="submitAddFirewallRule()" id="btn-submit-fw-rule" style="padding: 8px 18px;">+ Tạo Quy Tắc</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="js/app.js?v=4.0"></script>
   <script src="js/containers.js?v=4.0"></script>
   <script src="js/logs.js?v=4.0"></script>
@@ -994,6 +1058,7 @@ Bạn có thể bấm nút "🛡️ System Health AI Audit" ở trên để tôi
   <script src="js/ai.js?v=4.0"></script>
   <script src="js/monitoring.js?v=4.0"></script>
   <script src="js/updater.js?v=4.0"></script>
+  <script src="js/firewall.js?v=4.0"></script>
   <script>
     async function logoutSystem() {
       if (confirm("Bạn có chắc chắn muốn đăng xuất khỏi DockPulse không?")) {

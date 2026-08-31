@@ -21,8 +21,11 @@ async function loadSecurityAudit() {
     }
   }
 
-  // Load Fail2ban status alongside audit
+  // Load Fail2ban & Firewall status alongside audit
   loadFail2banStatus();
+  if (typeof loadFirewallStatus === "function") {
+    loadFirewallStatus();
+  }
 }
 
 function renderSecurityReport(report) {

@@ -114,6 +114,10 @@ func main() {
 	mux.HandleFunc("/api/system/fail2ban/install", authMiddleware(handleFail2banInstall))
 	mux.HandleFunc("/api/system/fail2ban/unban", authMiddleware(handleFail2banUnban))
 	mux.HandleFunc("/api/system/fail2ban/ban", authMiddleware(handleFail2banBan))
+	mux.HandleFunc("/api/system/firewall/status", authMiddleware(handleFirewallStatus))
+	mux.HandleFunc("/api/system/firewall/toggle", authMiddleware(handleFirewallToggle))
+	mux.HandleFunc("/api/system/firewall/rule/add", authMiddleware(handleFirewallRuleAdd))
+	mux.HandleFunc("/api/system/firewall/rule/delete", authMiddleware(handleFirewallRuleDelete))
 	mux.HandleFunc("/api/system/update/check", authMiddleware(handleUpdateCheck))
 	mux.HandleFunc("/api/system/update/apply", authMiddleware(handleUpdateApply))
 	mux.HandleFunc("/api/system/update/config", authMiddleware(handleUpdateConfig))
@@ -745,6 +749,78 @@ func handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonResponse(w, 200, map[string]interface{}{"auto_update_enabled": updater.AutoUpdateEnabled})
+}
+
+func handleFirewallStatus(w http.ResponseWriter, r *http.Request) {
+	status, err := system.GetFirewallStatus()
+	if err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, 200, status)
+}
+
+func handleFirewallToggle(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	var req struct {
+		Enable bool `json:"enable"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonResponse(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := system.ToggleFirewall(req.Enable); err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	msg := "Đã tạm tắt tường lửa."
+	if req.Enable {
+		msg = "Đã kích hoạt tường lửa an toàn thành công (Đã giữ mở cổng SSH 22 & DockPulse 3800)!"
+	}
+	jsonResponse(w, 200, map[string]string{"status": "ok", "message": msg})
+}
+
+func handleFirewallRuleAdd(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	var rule system.FirewallRule
+	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
+		jsonResponse(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := system.AddFirewallRule(rule); err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, 200, map[string]string{"status": "ok", "message": "Đã thêm quy tắc tường lửa thành công!"})
+}
+
+func handleFirewallRuleDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	var req struct {
+		ID       string `json:"id"`
+		Port     string `json:"port"`
+		Protocol string `json:"protocol"`
+		Action   string `json:"action"`
+		FromIP   string `json:"from_ip"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonResponse(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := system.DeleteFirewallRule(req.ID, req.Port, req.Protocol, req.Action, req.FromIP); err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, 200, map[string]string{"status": "ok", "message": "Đã xóa quy tắc tường lửa thành công!"})
 }
 
 func handleAIDiagnose(w http.ResponseWriter, r *http.Request) {
