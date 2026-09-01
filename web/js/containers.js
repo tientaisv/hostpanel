@@ -103,20 +103,23 @@ function renderContainers(list) {
 
     // ---- Independent action buttons always visible ----
     // Start: enabled only when stopped or paused
-    const startDisabled  = isRunning  || isBusy;
-    const stopDisabled   = isStopped  || isBusy;
-    const restartDisabled = isStopped || isBusy;
+    const startDisabled   = isRunning  || isBusy;
+    const stopDisabled    = isStopped  || isBusy;
+    const restartDisabled = isStopped  || isBusy;
+    const killDisabled    = isStopped  || isBusy;
 
     const startTitle   = isRunning ? "Container đang chạy" : "Start Container";
     const stopTitle    = isStopped ? "Container đã dừng"   : "Stop Container";
     const restartTitle = isStopped ? "Container đã dừng"   : "Restart Container";
+    const killTitle    = isStopped ? "Container đã dừng"   : "Kill Container (Buộc dừng khẩn cấp bằng SIGKILL)";
 
     const loadingSpan  = isBusy ? `<span class="ctr-action-loading" title="Đang xử lý...">⏳</span>` : "";
 
     const startAction  = isPaused ? 'unpause' : 'start';
-    const onClickStart   = startDisabled  ? '' : `containerAction('${c.id}','${startAction}')`;
-    const onClickStop    = stopDisabled   ? '' : `containerAction('${c.id}','stop')`;
+    const onClickStart   = startDisabled   ? '' : `containerAction('${c.id}','${startAction}')`;
+    const onClickStop    = stopDisabled    ? '' : `containerAction('${c.id}','stop')`;
     const onClickRestart = restartDisabled ? '' : `containerAction('${c.id}','restart')`;
+    const onClickKill    = killDisabled    ? '' : `confirmKillContainer('${c.id}','${escapeHTML(c.name)}')`;
 
     const engineBadge = c.engine === 'podman' 
       ? `<span style="display:inline-block; padding:1px 6px; font-size:0.7rem; font-weight:600; border-radius:4px; background:rgba(192,132,252,0.15); color:#c084fc; border:1px solid rgba(192,132,252,0.3); margin-left:6px;">🦭 Podman</span>`
@@ -163,6 +166,12 @@ function renderContainers(list) {
               onclick="${onClickRestart}"
               title="${restartTitle}"
               ${restartDisabled ? 'disabled' : ''}>🔄</button>
+
+            <!-- 💀 Kill – luôn hiển thị -->
+            <button class="btn-icon ctr-btn-kill${killDisabled ? ' ctr-btn-disabled' : ''}"
+              onclick="${onClickKill}"
+              title="${killTitle}"
+              ${killDisabled ? 'disabled' : ''}>💀</button>
 
             <!-- 💻 Terminal: chỉ khi đang running -->
             ${isRunning ? `<button class="btn-icon" onclick="openTerminalModal('${c.id}', '${escapeHTML(c.name)}')" title="Terminal Shell">💻</button>` : ''}
@@ -224,7 +233,13 @@ function showContainerToast(msg, type = "info") {
   setTimeout(() => { toast.style.opacity = "0"; setTimeout(() => toast.remove(), 450); }, 3000);
 }
 
-const ACTION_LABELS = { start: "Start", stop: "Stop", restart: "Restart", pause: "Pause", unpause: "Unpause" };
+const ACTION_LABELS = { start: "Start", stop: "Stop", restart: "Restart", pause: "Pause", unpause: "Unpause", kill: "Kill" };
+
+async function confirmKillContainer(id, name) {
+  if (confirm(`Bạn có chắc chắn muốn Kill (buộc dừng khẩn cấp bằng SIGKILL) container "${name}" không?\n\nLưu ý: Hành động này sẽ dừng ngay lập tức tiến trình của container mà không chờ tiến trình lưu dữ liệu.`)) {
+    await containerAction(id, "kill");
+  }
+}
 
 async function containerAction(id, action) {
   if (containerActionInProgress.has(id)) return;

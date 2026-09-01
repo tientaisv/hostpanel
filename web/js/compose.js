@@ -125,7 +125,7 @@ function renderComposeStacks(stacks) {
             <span style="font-weight: 600; font-size: 0.95rem;">${escapeHTML(srv.service)}</span>
             <span style="color: var(--text-muted); font-size: 0.8rem; margin-left: 8px;">(${escapeHTML(srv.name)})</span>
           </div>
-          <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+          <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
             ${srv.state === 'running' ? `
               <div data-role="srv-stats-box" style="font-size: 0.8rem; font-family: monospace; display: flex; gap: 12px; background: rgba(15, 23, 42, 0.4); padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05);">
                 <span title="Service CPU %" data-role="srv-cpu" style="color: #38bdf8; font-weight: 600;">⚡ ${srv.cpu_percent ? srv.cpu_percent.toFixed(1) : 0.0}%</span>
@@ -135,6 +135,14 @@ function renderComposeStacks(stacks) {
             ` : ''}
             <span style="font-family: monospace; font-size: 0.8rem; color: var(--accent-blue);">${srv.ports_str}</span>
             <span class="badge ${srvBadge}" data-role="srv-badge">${srv.state.toUpperCase()}</span>
+            ${srv.id ? `
+              <div class="action-btns" style="display: flex; gap: 4px; align-items: center;">
+                <button class="btn-icon ctr-btn-start" onclick="containerActionFromCompose('${srv.id}', 'start')" title="Start Service" ${srv.state === 'running' ? 'disabled' : ''}>▶️</button>
+                <button class="btn-icon ctr-btn-stop" onclick="containerActionFromCompose('${srv.id}', 'stop')" title="Stop Service" ${srv.state !== 'running' ? 'disabled' : ''}>⏹️</button>
+                <button class="btn-icon ctr-btn-restart" onclick="containerActionFromCompose('${srv.id}', 'restart')" title="Restart Service" ${srv.state !== 'running' ? 'disabled' : ''}>🔄</button>
+                <button class="btn-icon ctr-btn-kill" onclick="confirmKillContainerFromCompose('${srv.id}', '${escapeHTML(srv.name || srv.service)}')" title="Kill Service (SIGKILL khẩn cấp)" ${srv.state !== 'running' ? 'disabled' : ''}>💀</button>
+              </div>
+            ` : ''}
           </div>
         </div>
       `;
@@ -153,10 +161,11 @@ function renderComposeStacks(stacks) {
               : `<span style="display:inline-block; padding:1px 6px; font-size:0.7rem; font-weight:600; border-radius:4px; background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.3);">🐳 Docker</span>`}
             <span class="badge ${stateClass}" data-role="stack-badge">${stateText} (${st.running_count}/${st.total})</span>
           </div>
-          <div style="display: flex; gap: 8px;">
-            <button class="btn btn-secondary" onclick="composeAction('${escapeHTML(st.project)}', '${escapeHTML(engineName)}', 'start')">▶️ Start Stack</button>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-secondary" onclick="composeAction('${escapeHTML(st.project)}', '${escapeHTML(engineName)}', 'start')" ${st.state === 'running' ? 'disabled' : ''}>▶️ Start Stack</button>
             <button class="btn btn-secondary" onclick="composeAction('${escapeHTML(st.project)}', '${escapeHTML(engineName)}', 'restart')">🔄 Restart</button>
-            <button class="btn btn-danger" onclick="composeAction('${escapeHTML(st.project)}', '${escapeHTML(engineName)}', 'stop')">⏹️ Stop Stack</button>
+            <button class="btn btn-secondary" onclick="composeAction('${escapeHTML(st.project)}', '${escapeHTML(engineName)}', 'stop')" style="color: #f87171;" ${st.state === 'stopped' ? 'disabled' : ''}>⏹️ Stop Stack</button>
+            <button class="btn btn-danger" onclick="confirmKillCompose('${escapeHTML(st.project)}', '${escapeHTML(engineName)}')" style="background: rgba(244, 63, 94, 0.2); border: 1px solid #f43f5e; color: #fda4af;" ${st.state === 'stopped' ? 'disabled' : ''}>💀 Kill Stack</button>
           </div>
         </div>
 
@@ -289,6 +298,7 @@ function formatMBHelper(mb) {
 }
 
 async function composeAction(project, engine, action) {
+  const label = action === "kill" ? "Kill" : action === "stop" ? "Stop" : action === "restart" ? "Restart" : "Start";
   try {
     const targetProject = engine ? `${project}|${engine}` : project;
     const res = await fetch("/api/compose/action", {
@@ -298,12 +308,65 @@ async function composeAction(project, engine, action) {
     });
     if (!res.ok) {
       const err = await res.json();
-      alert(`Lỗi thao tác stack ${action}: ${err.error}`);
+      if (typeof showToast === "function") {
+        showToast(`❌ ${label} Stack "${project}" thất bại: ${err.error}`, "error");
+      } else {
+        alert(`Lỗi thao tác stack ${action}: ${err.error}`);
+      }
     } else {
+      if (typeof showToast === "function") {
+        showToast(`✅ ${label} Stack "${project}" thành công!`, "success");
+      }
       loadComposeStacks(false);
     }
   } catch (e) {
-    alert(`Lỗi hệ thống: ${e.message}`);
+    if (typeof showToast === "function") {
+      showToast(`❌ Lỗi hệ thống: ${e.message}`, "error");
+    } else {
+      alert(`Lỗi hệ thống: ${e.message}`);
+    }
+  }
+}
+
+async function confirmKillCompose(project, engine) {
+  if (confirm(`Bạn có chắc chắn muốn Kill (buộc dừng khẩn cấp toàn bộ các container bằng SIGKILL) stack "${project}" không?\n\nLưu ý: Tất cả container thuộc stack này sẽ bị dừng ngay lập tức.`)) {
+    await composeAction(project, engine, "kill");
+  }
+}
+
+async function containerActionFromCompose(id, action) {
+  const label = action === "kill" ? "Kill" : action === "stop" ? "Stop" : action === "restart" ? "Restart" : "Start";
+  try {
+    const res = await fetch("/api/containers/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, action })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      if (typeof showToast === "function") {
+        showToast(`❌ ${label} service thất bại: ${err.error}`, "error");
+      } else {
+        alert(`Lỗi: ${err.error}`);
+      }
+    } else {
+      if (typeof showToast === "function") {
+        showToast(`✅ ${label} service thành công!`, "success");
+      }
+      loadComposeStacks(false);
+    }
+  } catch (e) {
+    if (typeof showToast === "function") {
+      showToast(`❌ Lỗi hệ thống: ${e.message}`, "error");
+    } else {
+      alert(`Lỗi hệ thống: ${e.message}`);
+    }
+  }
+}
+
+async function confirmKillContainerFromCompose(id, name) {
+  if (confirm(`Bạn có chắc chắn muốn Kill (buộc dừng khẩn cấp bằng SIGKILL) service container "${name}" không?\n\nLưu ý: Tiến trình container sẽ bị dừng ngay lập tức.`)) {
+    await containerActionFromCompose(id, "kill");
   }
 }
 

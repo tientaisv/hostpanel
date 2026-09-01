@@ -117,3 +117,19 @@ function escapeJsString(str) {
   if (str === null || str === undefined) return '';
   return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
+
+function showToast(msg, type = "info") {
+  const toast = document.createElement("div");
+  toast.textContent = msg;
+  const colors = { success: "#22c55e", error: "#ef4444", info: "#38bdf8", warn: "#f59e0b" };
+  Object.assign(toast.style, {
+    position: "fixed", bottom: "24px", right: "24px", zIndex: 9999,
+    background: colors[type] || colors.info,
+    color: "#fff", padding: "10px 18px", borderRadius: "10px",
+    fontSize: "0.9rem", fontWeight: "600", boxShadow: "0 4px 20px rgba(0,0,0,0.35)",
+    transition: "opacity 0.4s", opacity: "1",
+  });
+  document.body.appendChild(toast);
+  setTimeout(() => { toast.style.opacity = "0"; setTimeout(() => toast.remove(), 450); }, 3000);
+}
+

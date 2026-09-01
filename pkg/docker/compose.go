@@ -3,6 +3,9 @@ package docker
 import (
 	"fmt"
 	"sort"
+	"strings"
+	"sync"
+
 	"dockpulse/pkg/system"
 )
 
@@ -176,11 +179,18 @@ func (c *Client) StackAction(project string, action string) error {
 
 	found := false
 	for _, s := range stacks {
-		if s.Project == project || fmt.Sprintf("%s|%s", s.Project, s.Engine) == project {
+		projKey := fmt.Sprintf("%s|%s", s.Project, s.Engine)
+		if s.Project == project || projKey == project || strings.EqualFold(s.Project, project) || strings.EqualFold(projKey, project) {
 			found = true
+			var wg sync.WaitGroup
 			for _, srv := range s.Services {
-				_ = c.ContainerAction(srv.ID, action)
+				wg.Add(1)
+				go func(sid string) {
+					defer wg.Done()
+					_ = c.ContainerAction(sid, action)
+				}(srv.ID)
 			}
+			wg.Wait()
 		}
 	}
 

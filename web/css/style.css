@@ -658,10 +658,12 @@ textarea:focus-visible,
 .ctr-btn-start { color: #34d399; }
 .ctr-btn-stop  { color: #f87171; }
 .ctr-btn-restart { color: #fbbf24; }
+.ctr-btn-kill { color: #f43f5e; }
 
 .ctr-btn-start:not(:disabled):not(.ctr-btn-disabled):hover { background: rgba(16, 185, 129, 0.18); border-color: #10b981; }
 .ctr-btn-stop:not(:disabled):not(.ctr-btn-disabled):hover  { background: rgba(239, 68, 68, 0.18); border-color: #ef4444; }
 .ctr-btn-restart:not(:disabled):not(.ctr-btn-disabled):hover { background: rgba(245, 158, 11, 0.18); border-color: #f59e0b; }
+.ctr-btn-kill:not(:disabled):not(.ctr-btn-disabled):hover { background: rgba(244, 63, 94, 0.22); border-color: #f43f5e; box-shadow: 0 0 10px rgba(244, 63, 94, 0.35); }
 
 @keyframes ctr-spin { to { transform: rotate(360deg); } }
 .ctr-action-loading { display: inline-block; animation: ctr-spin 0.8s linear infinite; }
