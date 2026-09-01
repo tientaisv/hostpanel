@@ -14,10 +14,10 @@
 ### 🧩 2. Quản Lý Docker Compose Stacks
 - Thống kê toàn bộ các dự án Docker Compose theo Stack (`running`, `partial`, `stopped`).
 - **Stack Resource Usage**: Đo tổng mức tiêu thụ tài nguyên của từng Stack và hiển thị chi tiết chỉ số (% CPU, RAM MB/%, Net I/O) cho từng Service/Container thành phần.
-- Thao tác nhanh: Start, Stop, Restart toàn bộ Compose Stack chỉ với 1 click.
+- Thao tác nhanh: Start, Stop, Restart, **💀 Kill Stack** (buộc dừng khẩn cấp toàn bộ container bằng `SIGKILL`) và điều khiển từng service độc lập trong stack chỉ với 1 click.
 
 ### 📦 3. Quản Lý Containers, Images, Volumes & Networks
-- **Containers**: Xem danh sách chi tiết (Ports mapping, IP Address, Status), theo dõi CPU/RAM/Net realtime, xem live logs stream, dọn dẹp log, thao tác Start/Stop/Restart/Pause/Remove.
+- **Containers**: Xem danh sách chi tiết (Ports mapping, IP Address, Status), theo dõi CPU/RAM/Net realtime, xem live logs stream, dọn dẹp log, thao tác Start/Stop/Restart/**💀 Kill** (`SIGKILL` dừng tức thì)/Pause/Remove.
 - **Images**: Quản lý repository, tag, dung lượng, hỗ trợ tính năng **Prune Unused Images** dọn dẹp ảnh thừa.
 - **Volumes**: Quản lý volume, mount path, dung lượng đĩa chiếm dụng, hỗ trợ **Prune Unused Volumes**.
 - **Networks & Ports**: Giám sát các cổng Listening trên Host Server và quản lý các Docker Network custom.
