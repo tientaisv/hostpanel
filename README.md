@@ -12,17 +12,20 @@
 - **Docker Engine Consumption**: Tổng hợp % CPU, RAM (MB và % RAM Server) và Network Traffic (📥 Rx / 📤 Tx) mà toàn bộ Docker Engine đang chiếm dụng.
 - **Lưu Trữ Lịch Sử Qua Cloud (Supabase)**: Hỗ trợ chuyển đổi đồ thị xem xu hướng tài nguyên **24 Giờ Qua**, **7 Ngày Qua**, **30 Ngày Qua** với chi phí tài nguyên Host gần như bằng 0 (`0% CPU, 0 Byte Disk Write`).
 
-### 🧩 2. Quản Lý Docker Compose Stacks
-
+### 🧩 2. Quản Lý Docker Compose Stacks & Recreate Trực Tiếp
 - Thống kê toàn bộ các dự án Docker Compose theo Stack (`running`, `partial`, `stopped`).
 - **Stack Resource Usage**: Đo tổng mức tiêu thụ tài nguyên của từng Stack và hiển thị chi tiết chỉ số (% CPU, RAM MB/%, Net I/O) cho từng Service/Container thành phần.
+- **🔄⚡ 1-Click Recreate Stack & Services**: Tái lập trình toàn bộ Compose Stack hoặc từng service (`docker-compose up -d --force-recreate`), tự động cập nhật container khi chỉnh sửa file compose/env mà không cần gõ lệnh terminal. Hỗ trợ tùy chọn Pull image mới nhất và live console output stream.
 - Thao tác nhanh: Start, Stop, Restart, **💀 Kill Stack** (buộc dừng khẩn cấp toàn bộ container bằng `SIGKILL`) và điều khiển từng service độc lập trong stack chỉ với 1 click.
 
-### 📦 3. Quản Lý Containers, Images, Volumes & Networks
-
-- **Containers**: Xem danh sách chi tiết (Ports mapping, IP Address, Status), theo dõi CPU/RAM/Net realtime, xem live logs stream, dọn dẹp log, thao tác Start/Stop/Restart/**💀 Kill** (`SIGKILL` dừng tức thì)/Pause/Remove.
-- **Images**: Quản lý repository, tag, dung lượng, hỗ trợ tính năng **Prune Unused Images** dọn dẹp ảnh thừa.
-- **Volumes**: Quản lý volume, mount path, dung lượng đĩa chiếm dụng, hỗ trợ **Prune Unused Volumes**.
+### 📦 3. Quản Lý Containers (Giao Diện Bento Grid & Sticky Table Đột Phá)
+- **Giao diện Dual View thông minh**: 
+  - 🗂️ **Lưới Thẻ Bento Grid**: Phân bố thông tin thoáng đãng, co giãn responsive, cuộn cực mượt mà không bao giờ bị ép cuộn ngang khó chịu.
+  - 📋 **Bảng Cố Định Sticky Table**: Tiêu đề cột luôn cố định trên đỉnh khi cuộn dọc.
+  - 🏷️ **Thanh công cụ dính (Sticky Toolbar)**: Tìm kiếm realtime đa trường, bộ lọc nhanh theo trạng thái (`Tất cả`, `🟢 Đang chạy`, `🔴 Đã dừng`, `🧩 Compose Stacks`, `📦 Đơn lẻ`) và lọc theo Engine (`Podman` / `Docker`).
+- **🔄⚡ Recreate Container 1-Click**: Tự động nhận diện container thuộc Compose để recreate theo service hoặc tái lập trình container standalone với cấu hình gốc và image mới nhất.
+- **Thao tác toàn diện**: Start, Stop, Restart, **💀 Kill** (`SIGKILL` dừng tức thì), Live Logs Stream, Web Terminal Shell, AI Diagnose và Remove.
+- **Images & Volumes**: Quản lý repository, tag, dung lượng, hỗ trợ tính năng **Prune Unused Images / Volumes** dọn dẹp bộ nhớ thừa.
 - **Networks & Ports**: Giám sát các cổng Listening trên Host Server và quản lý các Docker Network custom.
 
 ### 💻 4. Terminal Shell Trực Tiếp Trên Web

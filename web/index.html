@@ -533,28 +533,80 @@
 
     <!-- SECTION 2: CONTAINERS -->
     <section id="sec-containers" class="content-section">
-      <div class="toolbar">
-        <input type="text" id="search-ctrs" class="search-box" placeholder="🔍 Tìm kiếm container, IP, Port, Image...">
-        <div style="display: flex; gap: 10px; align-items: center;">
-          <label style="font-size: 0.85rem; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; gap: 6px;">
-            <input type="checkbox" id="auto-refresh-ctrs-stats" checked> ⚡ Auto-Monitor Stats
-          </label>
-          <button class="btn btn-secondary" onclick="loadContainers()">🔄 Refresh</button>
+      <!-- STICKY CONTROL TOOLBAR -->
+      <div class="containers-sticky-toolbar">
+        <div class="toolbar-row-top">
+          <!-- Realtime Search -->
+          <div class="search-wrap">
+            <input type="text" id="search-ctrs" class="search-box" placeholder="🔍 Tìm container, image, port, IP, compose stack...">
+            <button id="clear-search-btn" class="clear-search-btn" style="display:none;" onclick="clearContainerSearch()">✕</button>
+          </div>
+
+          <!-- Quick Actions & View Switcher -->
+          <div class="toolbar-actions">
+            <!-- View Mode Switcher: Grid vs Table -->
+            <div class="view-mode-group">
+              <button class="view-mode-btn active" id="btn-view-grid" onclick="setContainersViewMode('grid')" title="Dạng thẻ Bento Grid (Trực quan, thoáng đãng, cuộn mượt mà)">
+                🗂️ Lưới Thẻ
+              </button>
+              <button class="view-mode-btn" id="btn-view-table" onclick="setContainersViewMode('table')" title="Dạng bảng (Gọn gàng, tiêu đề cố định)">
+                📋 Bảng
+              </button>
+            </div>
+
+            <!-- Engine Select -->
+            <select id="filter-engine" class="search-box filter-select" onchange="applyContainerFilters()">
+              <option value="all">⚡ Tất cả Engine</option>
+              <option value="podman">🦭 Podman</option>
+              <option value="docker">🐳 Docker</option>
+            </select>
+
+            <label class="auto-refresh-label">
+              <input type="checkbox" id="auto-refresh-ctrs-stats" checked> ⚡ Auto Stats
+            </label>
+
+            <button class="btn btn-secondary" onclick="loadContainers()" title="Làm mới danh sách">🔄 Refresh</button>
+          </div>
+        </div>
+
+        <!-- Quick Status Filter Pills -->
+        <div class="status-filter-pills" id="container-status-pills">
+          <button class="filter-pill active" data-filter="all" onclick="setContainerStatusFilter('all')">
+            Tất cả <span class="pill-count" id="count-all">0</span>
+          </button>
+          <button class="filter-pill pill-running" data-filter="running" onclick="setContainerStatusFilter('running')">
+            🟢 Đang chạy <span class="pill-count" id="count-running">0</span>
+          </button>
+          <button class="filter-pill pill-stopped" data-filter="stopped" onclick="setContainerStatusFilter('stopped')">
+            🔴 Đã dừng <span class="pill-count" id="count-stopped">0</span>
+          </button>
+          <button class="filter-pill pill-compose" data-filter="compose" onclick="setContainerStatusFilter('compose')">
+            🧩 Compose Stacks <span class="pill-count" id="count-compose">0</span>
+          </button>
+          <button class="filter-pill pill-standalone" data-filter="standalone" onclick="setContainerStatusFilter('standalone')">
+            📦 Đơn lẻ <span class="pill-count" id="count-standalone">0</span>
+          </button>
         </div>
       </div>
 
-      <div class="data-card">
+      <!-- VIEW 1: BENTO GRID / CARD VIEW (Default, highly responsive, smooth scrolling) -->
+      <div id="containers-grid-view" class="containers-grid">
+        <!-- Rendered dynamically in containers.js -->
+      </div>
+
+      <!-- VIEW 2: COMPACT TABLE VIEW (With Sticky Headers) -->
+      <div id="containers-table-view" class="data-card table-view-container" style="display: none; padding: 0;">
         <div class="table-scroll-x">
-          <table class="table" id="table-containers">
+          <table class="table table-sticky" id="table-containers">
             <thead>
               <tr>
-                <th>Name / ID</th>
+                <th style="min-width: 200px;">Name / ID</th>
                 <th>Status</th>
-                <th>Image</th>
-                <th>CPU / RAM / Net I/O</th>
-                <th>Ports (Host -> Private)</th>
-                <th>IP Address</th>
-                <th style="white-space:nowrap;">Actions</th>
+                <th style="min-width: 160px;">Image</th>
+                <th style="min-width: 180px;">CPU / RAM / Net I/O</th>
+                <th style="min-width: 160px;">Ports (Host -> Ctr)</th>
+                <th style="min-width: 130px;">IP Address</th>
+                <th style="min-width: 240px; white-space:nowrap;">Actions</th>
               </tr>
             </thead>
             <tbody id="tbody-containers">
@@ -1053,6 +1105,54 @@ Bạn có thể bấm nút "🛡️ System Health AI Audit" ở trên để tôi
       </div>
     </section>
   </main>
+
+  <!-- MODAL: RECREATE CONTAINER / COMPOSE STACK -->
+  <div class="modal-overlay" id="modal-recreate">
+    <div class="modal-box" style="max-width: 680px;">
+      <div class="modal-header">
+        <div class="modal-title" id="recreate-modal-title" style="display: flex; align-items: center; gap: 8px;">
+          <span>🔄⚡</span> <span>Tái Lập Trình (Recreate)</span>
+        </div>
+        <button class="modal-close" onclick="closeRecreateModal()">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 20px;">
+        <div id="recreate-target-info" style="background: rgba(15, 23, 42, 0.6); padding: 14px 18px; border-radius: 8px; border: 1px solid var(--border-color); margin-bottom: 16px;">
+          <!-- Target details (Name, Image, Type, Working dir, etc.) -->
+        </div>
+
+        <div id="recreate-options-panel" style="margin-bottom: 16px;">
+          <div style="font-weight: 700; margin-bottom: 8px; font-size: 0.9rem;">⚙️ Tùy chọn thực thi:</div>
+          <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-bottom: 8px; font-size: 0.9rem;">
+            <input type="checkbox" id="recreate-opt-pull" checked style="width: 16px; height: 16px;">
+            <span><strong>Kéo Image mới nhất</strong> (<code>--pull always</code> hoặc <code>docker pull</code> trước khi tạo lại)</span>
+          </label>
+          <label id="recreate-opt-build-wrap" style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 0.9rem;">
+            <input type="checkbox" id="recreate-opt-build" style="width: 16px; height: 16px;">
+            <span><strong>Xây dựng lại Images</strong> (<code>--build</code> nếu compose file có build directive)</span>
+          </label>
+          <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 8px;">
+            💡 <em>Lưu ý: Thao tác này sẽ dừng, xóa container cũ và khởi tạo lại phiên bản mới nhất với các cấu hình cập nhật. Các ổ đĩa (Volumes) dữ liệu gắn kết vẫn được giữ nguyên an toàn.</em>
+          </div>
+        </div>
+
+        <!-- Live Execution Output Area -->
+        <div id="recreate-output-wrap" style="display: none; margin-top: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">🖥️ Nhật Ký Thực Thi (Live Output):</span>
+            <span id="recreate-status-badge" class="badge badge-paused">Đang chạy...</span>
+          </div>
+          <pre id="recreate-log-output" class="terminal-log-box" style="height: 220px; overflow-y: auto; background: #050811; color: #38bdf8; font-family: monospace; font-size: 0.82rem; padding: 12px; border-radius: 6px; border: 1px solid rgba(56, 189, 248, 0.2); white-space: pre-wrap; word-break: break-all;"></pre>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px;">
+          <button class="btn btn-secondary" id="btn-cancel-recreate" onclick="closeRecreateModal()">Hủy bỏ</button>
+          <button class="btn btn-primary" id="btn-run-recreate" onclick="executeRecreateAction()" style="background: linear-gradient(135deg, #0284c7, #2563eb); border: none;">
+            🚀 Bắt Đầu Recreate
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- MODAL: LIVE LOGS -->
   <div class="modal-overlay" id="modal-logs">

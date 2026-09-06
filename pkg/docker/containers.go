@@ -3,6 +3,7 @@ package docker
 import (
 	"encoding/json"
 	"fmt"
+	"os/exec"
 	"sort"
 	"strings"
 	"sync"
@@ -19,21 +20,24 @@ type PortMapping struct {
 }
 
 type ContainerSummary struct {
-	ID      string            `json:"id"`
-	ShortID string            `json:"short_id"`
-	Names   []string          `json:"names"`
-	Name    string            `json:"name"`
-	Image   string            `json:"image"`
-	ImageID string            `json:"image_id"`
-	Command string            `json:"command"`
-	Created int64             `json:"created"`
-	State   string            `json:"state"`
-	Status  string            `json:"status"`
-	Ports   []PortMapping     `json:"ports"`
-	IPs     map[string]string `json:"ips"` // network_name -> IP
-	Labels  map[string]string `json:"labels"`
-	Project string            `json:"project"` // Compose project name
-	Engine  string            `json:"engine"`  // "podman" or "docker"
+	ID         string            `json:"id"`
+	ShortID    string            `json:"short_id"`
+	Names      []string          `json:"names"`
+	Name       string            `json:"name"`
+	Image      string            `json:"image"`
+	ImageID    string            `json:"image_id"`
+	Command    string            `json:"command"`
+	Created    int64             `json:"created"`
+	State      string            `json:"state"`
+	Status     string            `json:"status"`
+	Ports      []PortMapping     `json:"ports"`
+	IPs        map[string]string `json:"ips"` // network_name -> IP
+	Labels     map[string]string `json:"labels"`
+	Project    string            `json:"project"` // Compose project name
+	Service    string            `json:"service,omitempty"`
+	WorkingDir string            `json:"working_dir,omitempty"`
+	ConfigFile string            `json:"config_file,omitempty"`
+	Engine     string            `json:"engine"` // "podman" or "docker"
 }
 
 type DockerPortItem struct {
@@ -119,6 +123,9 @@ func (c *Client) ListContainers() ([]ContainerSummary, error) {
 			}
 
 			proj := ""
+			srvName := ""
+			workingDir := ""
+			configFile := ""
 			if r.Labels != nil {
 				if p, ok := r.Labels["com.docker.compose.project"]; ok && p != "" {
 					proj = p
@@ -129,24 +136,45 @@ func (c *Client) ListContainers() ([]ContainerSummary, error) {
 				} else if p, ok := r.Labels["pod"]; ok && p != "" {
 					proj = p
 				}
+
+				if s, ok := r.Labels["com.docker.compose.service"]; ok && s != "" {
+					srvName = s
+				} else if s, ok := r.Labels["io.podman.compose.service"]; ok && s != "" {
+					srvName = s
+				}
+
+				if wd, ok := r.Labels["com.docker.compose.project.working_dir"]; ok && wd != "" {
+					workingDir = wd
+				} else if wd, ok := r.Labels["io.podman.compose.project.working_dir"]; ok && wd != "" {
+					workingDir = wd
+				}
+
+				if cf, ok := r.Labels["com.docker.compose.project.config_files"]; ok && cf != "" {
+					configFile = cf
+				} else if cf, ok := r.Labels["io.podman.compose.project.config_files"]; ok && cf != "" {
+					configFile = cf
+				}
 			}
 
 			rawCandidates = append(rawCandidates, ContainerSummary{
-				ID:      r.ID,
-				ShortID: shortID,
-				Names:   r.Names,
-				Name:    name,
-				Image:   r.Image,
-				ImageID: r.ImageID,
-				Command: r.Command,
-				Created: r.Created,
-				State:   r.State,
-				Status:  r.Status,
-				Ports:   ports,
-				IPs:     ips,
-				Labels:  r.Labels,
-				Project: proj,
-				Engine:  engineName,
+				ID:         r.ID,
+				ShortID:    shortID,
+				Names:      r.Names,
+				Name:       name,
+				Image:      r.Image,
+				ImageID:    r.ImageID,
+				Command:    r.Command,
+				Created:    r.Created,
+				State:      r.State,
+				Status:     r.Status,
+				Ports:      ports,
+				IPs:        ips,
+				Labels:     r.Labels,
+				Project:    proj,
+				Service:    srvName,
+				WorkingDir: workingDir,
+				ConfigFile: configFile,
+				Engine:     engineName,
 			})
 		}
 	}
@@ -551,4 +579,147 @@ func (c *Client) GetTotalDockerStats(hostMemTotalMB uint64) (*DockerTotalSummary
 	}
 
 	return summary, nil
+}
+
+// RecreateContainer recreates a container. If the container belongs to a Compose project,
+// it delegates to RecreateCompose for that specific service. Otherwise it inspects the container,
+// pulls new image if requested, removes old container, and creates & starts a new one with same configs.
+func (c *Client) RecreateContainer(id string, pull bool) (string, error) {
+	// 1. Check if container belongs to a Compose project
+	containers, _ := c.ListContainers()
+	var targetCtr *ContainerSummary
+	for _, ctr := range containers {
+		if ctr.ID == id || ctr.ShortID == id || strings.HasPrefix(ctr.ID, id) {
+			targetCtr = &ctr
+			break
+		}
+	}
+
+	if targetCtr != nil && targetCtr.Project != "" {
+		// Compose container: recreate via compose
+		return c.RecreateCompose(targetCtr.Project, targetCtr.Service, targetCtr.WorkingDir, targetCtr.ConfigFile, pull, false)
+	}
+
+	// 2. Standalone container: inspect via docker/podman API
+	sc := c.GetClientForContainer(id)
+	inspectBytes, code, err := sc.Get(fmt.Sprintf("/containers/%s/json", id))
+	if err != nil || (code != 200 && code != 204) {
+		return "", fmt.Errorf("không thể inspect container %s: code %d, err %v", id, code, err)
+	}
+
+	var inspect struct {
+		ID     string `json:"Id"`
+		Name   string `json:"Name"`
+		Image  string `json:"Image"`
+		Config struct {
+			Hostname     string              `json:"Hostname,omitempty"`
+			Domainname   string              `json:"Domainname,omitempty"`
+			User         string              `json:"User,omitempty"`
+			AttachStdin  bool                `json:"AttachStdin"`
+			AttachStdout bool                `json:"AttachStdout"`
+			AttachStderr bool                `json:"AttachStderr"`
+			Tty          bool                `json:"Tty"`
+			OpenStdin    bool                `json:"OpenStdin"`
+			StdinOnce    bool                `json:"StdinOnce"`
+			Env          []string            `json:"Env"`
+			Cmd          []string            `json:"Cmd"`
+			Entrypoint   []string            `json:"Entrypoint"`
+			Image        string              `json:"Image"`
+			Labels       map[string]string   `json:"Labels"`
+			WorkingDir   string              `json:"WorkingDir,omitempty"`
+			ExposedPorts map[string]struct{} `json:"ExposedPorts,omitempty"`
+			StopSignal   string              `json:"StopSignal,omitempty"`
+			StopTimeout  int                 `json:"StopTimeout,omitempty"`
+		} `json:"Config"`
+		HostConfig interface{} `json:"HostConfig"`
+	}
+
+	if err := json.Unmarshal(inspectBytes, &inspect); err != nil {
+		return "", fmt.Errorf("lỗi parse inspect container: %v", err)
+	}
+
+	cleanName := strings.TrimPrefix(inspect.Name, "/")
+	imageName := inspect.Config.Image
+	if imageName == "" {
+		imageName = inspect.Image
+	}
+
+	logBuffer := fmt.Sprintf("🔄 Bắt đầu tái lập trình (Recreate) container: %s (Image: %s)\n", cleanName, imageName)
+
+	// Step A: Pull new image if requested
+	if pull && imageName != "" {
+		pullCli := "docker"
+		if sc.engineInfo.IsPodman {
+			pullCli = "podman"
+		}
+		logBuffer += fmt.Sprintf("📥 Đang kéo phiên bản Image mới nhất (%s pull %s)...\n", pullCli, imageName)
+		pullOut, pullErr := exec.Command(pullCli, "pull", imageName).CombinedOutput()
+		if pullErr != nil {
+			logBuffer += fmt.Sprintf("⚠️ Cảnh báo pull image: %v (%s)\n", pullErr, strings.TrimSpace(string(pullOut)))
+		} else {
+			logBuffer += fmt.Sprintf("✅ Kéo image thành công:\n%s\n", strings.TrimSpace(string(pullOut)))
+		}
+	}
+
+	// Step B: Stop old container
+	logBuffer += fmt.Sprintf("⏹️ Đang dừng container cũ: %s...\n", cleanName)
+	_, _, _ = sc.Post(fmt.Sprintf("/containers/%s/stop", id), nil)
+
+	// Step C: Remove old container (v=false to preserve mounted volumes)
+	logBuffer += fmt.Sprintf("🗑️ Đang gỡ bỏ container cũ: %s (giữ nguyên volumes dữ liệu)...\n", cleanName)
+	delBody, delCode, delErr := sc.Delete(fmt.Sprintf("/containers/%s?v=false&force=true", id))
+	if delErr != nil && delCode != 200 && delCode != 204 && delCode != 404 {
+		return logBuffer, fmt.Errorf("không thể xóa container cũ: %v (%s)", delErr, string(delBody))
+	}
+
+	// Step D: Create new container with exact config
+	logBuffer += fmt.Sprintf("⚙️ Đang tạo mới container: %s...\n", cleanName)
+	createPayload := map[string]interface{}{
+		"Hostname":     inspect.Config.Hostname,
+		"Domainname":   inspect.Config.Domainname,
+		"User":         inspect.Config.User,
+		"AttachStdin":  inspect.Config.AttachStdin,
+		"AttachStdout": inspect.Config.AttachStdout,
+		"AttachStderr": inspect.Config.AttachStderr,
+		"Tty":          inspect.Config.Tty,
+		"OpenStdin":    inspect.Config.OpenStdin,
+		"StdinOnce":    inspect.Config.StdinOnce,
+		"Env":          inspect.Config.Env,
+		"Cmd":          inspect.Config.Cmd,
+		"Entrypoint":   inspect.Config.Entrypoint,
+		"Image":        imageName,
+		"Labels":       inspect.Config.Labels,
+		"WorkingDir":   inspect.Config.WorkingDir,
+		"ExposedPorts": inspect.Config.ExposedPorts,
+		"StopSignal":   inspect.Config.StopSignal,
+		"HostConfig":   inspect.HostConfig,
+	}
+	createJSON, _ := json.Marshal(createPayload)
+
+	createResp, createCode, createErr := sc.Post(fmt.Sprintf("/containers/create?name=%s", cleanName), createJSON)
+	if createErr != nil || (createCode != 201 && createCode != 200) {
+		return logBuffer, fmt.Errorf("lỗi tạo container mới status %d: %v\nBody: %s", createCode, createErr, string(createResp))
+	}
+
+	var createRes struct {
+		ID       string   `json:"Id"`
+		Warnings []string `json:"Warnings"`
+	}
+	_ = json.Unmarshal(createResp, &createRes)
+
+	if createRes.ID == "" {
+		return logBuffer, fmt.Errorf("không nhận được ID container mới: %s", string(createResp))
+	}
+
+	logBuffer += fmt.Sprintf("✅ Đã tạo container mới thành công: %s (ID: %s)\n", cleanName, createRes.ID[:12])
+
+	// Step E: Start new container
+	logBuffer += fmt.Sprintf("▶️ Đang khởi động container mới...\n")
+	startResp, startCode, startErr := sc.Post(fmt.Sprintf("/containers/%s/start", createRes.ID), nil)
+	if startErr != nil || (startCode != 204 && startCode != 200 && startCode != 304) {
+		return logBuffer, fmt.Errorf("lỗi khởi động container mới status %d: %v\nBody: %s", startCode, startErr, string(startResp))
+	}
+
+	logBuffer += fmt.Sprintf("🎉 Recreate Container thành công! Container %s đang hoạt động.", cleanName)
+	return logBuffer, nil
 }

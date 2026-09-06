@@ -3,19 +3,86 @@ let containersStatsMap = {};
 let containersStatsInterval = null;
 let containerActionInProgress = new Set(); // Track containers with pending actions
 
+let currentStatusFilter = "all";
+let currentEngineFilter = "all";
+let containersViewMode = localStorage.getItem("dockpulse_containers_view_mode") || "grid";
+let activeRecreateTarget = null; // { type: 'container'|'compose_stack'|'compose_service', id, name, project, service, working_dir, config_file, image }
+
+// Initialize view mode on load
+document.addEventListener("DOMContentLoaded", () => {
+  setContainersViewMode(containersViewMode, false);
+});
+
+function setContainersViewMode(mode, triggerRender = true) {
+  containersViewMode = mode;
+  localStorage.setItem("dockpulse_containers_view_mode", mode);
+
+  const btnGrid = document.getElementById("btn-view-grid");
+  const btnTable = document.getElementById("btn-view-table");
+  const gridView = document.getElementById("containers-grid-view");
+  const tableView = document.getElementById("containers-table-view");
+
+  if (btnGrid && btnTable) {
+    if (mode === "grid") {
+      btnGrid.classList.add("active");
+      btnTable.classList.remove("active");
+      if (gridView) gridView.style.display = "grid";
+      if (tableView) tableView.style.display = "none";
+    } else {
+      btnTable.classList.add("active");
+      btnGrid.classList.remove("active");
+      if (gridView) gridView.style.display = "none";
+      if (tableView) tableView.style.display = "block";
+    }
+  }
+
+  if (triggerRender && rawContainersData.length > 0) {
+    applyContainerFilters();
+  }
+}
+
+function setContainerStatusFilter(filter) {
+  currentStatusFilter = filter;
+  const pills = document.querySelectorAll("#container-status-pills .filter-pill");
+  pills.forEach(p => {
+    if (p.getAttribute("data-filter") === filter) {
+      p.classList.add("active");
+    } else {
+      p.classList.remove("active");
+    }
+  });
+  applyContainerFilters();
+}
+
+function clearContainerSearch() {
+  const searchInput = document.getElementById("search-ctrs");
+  const clearBtn = document.getElementById("clear-search-btn");
+  if (searchInput) {
+    searchInput.value = "";
+    if (clearBtn) clearBtn.style.display = "none";
+    applyContainerFilters();
+  }
+}
+
 async function loadContainers() {
   const tbody = document.getElementById("tbody-containers");
+  const grid = document.getElementById("containers-grid-view");
   try {
     const res = await fetch("/api/containers");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     rawContainersData = await res.json();
-    renderContainers(rawContainersData);
+    
+    updateFilterCounts();
+    applyContainerFilters();
 
     // Fetch stats immediately if auto-refresh is active
     fetchContainersStats();
   } catch (err) {
     if (tbody) {
       tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color: var(--accent-red);">Lỗi tải danh sách: ${err.message}</td></tr>`;
+    }
+    if (grid) {
+      grid.innerHTML = `<div class="data-card" style="padding: 24px; text-align: center; color: var(--accent-red); grid-column: 1 / -1;">Lỗi tải danh sách: ${err.message}</div>`;
     }
   }
 }
@@ -30,31 +97,282 @@ async function fetchContainersStats() {
     const res = await fetch("/api/containers/stats/all");
     if (res.ok) {
       containersStatsMap = await res.json();
-      renderContainers(rawContainersData);
+      applyContainerFilters();
     }
   } catch (e) {}
 }
 
+function updateFilterCounts() {
+  let running = 0;
+  let stopped = 0;
+  let compose = 0;
+  let standalone = 0;
+
+  rawContainersData.forEach(c => {
+    if (c.state === "running") running++;
+    else stopped++;
+
+    if (c.project && c.project.trim() !== "") compose++;
+    else standalone++;
+  });
+
+  const countAll = document.getElementById("count-all");
+  const countRunning = document.getElementById("count-running");
+  const countStopped = document.getElementById("count-stopped");
+  const countCompose = document.getElementById("count-compose");
+  const countStandalone = document.getElementById("count-standalone");
+
+  if (countAll) countAll.textContent = rawContainersData.length;
+  if (countRunning) countRunning.textContent = running;
+  if (countStopped) countStopped.textContent = stopped;
+  if (countCompose) countCompose.textContent = compose;
+  if (countStandalone) countStandalone.textContent = standalone;
+}
+
+function applyContainerFilters() {
+  const searchInput = document.getElementById("search-ctrs");
+  const query = searchInput ? searchInput.value.toLowerCase().trim() : "";
+  const clearBtn = document.getElementById("clear-search-btn");
+  if (clearBtn) {
+    clearBtn.style.display = query ? "block" : "none";
+  }
+
+  const engineSelect = document.getElementById("filter-engine");
+  currentEngineFilter = engineSelect ? engineSelect.value : "all";
+
+  let filtered = rawContainersData.filter(c => {
+    // 1. Status Filter
+    if (currentStatusFilter === "running" && c.state !== "running") return false;
+    if (currentStatusFilter === "stopped" && c.state === "running") return false;
+    if (currentStatusFilter === "compose" && (!c.project || c.project.trim() === "")) return false;
+    if (currentStatusFilter === "standalone" && c.project && c.project.trim() !== "") return false;
+
+    // 2. Engine Filter
+    if (currentEngineFilter !== "all" && c.engine !== currentEngineFilter) return false;
+
+    // 3. Search Query
+    if (query) {
+      const matchName = c.name && c.name.toLowerCase().includes(query);
+      const matchImage = c.image && c.image.toLowerCase().includes(query);
+      const matchID = c.short_id && c.short_id.toLowerCase().includes(query);
+      const matchProject = c.project && c.project.toLowerCase().includes(query);
+      const matchPorts = c.ports && c.ports.some(p => p.public_port.toString().includes(query) || p.private_port.toString().includes(query));
+      const matchIPs = c.ips && Object.values(c.ips).some(ip => ip.includes(query));
+      if (!matchName && !matchImage && !matchID && !matchProject && !matchPorts && !matchIPs) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  renderContainers(filtered);
+}
+
 function renderContainers(list) {
+  renderContainersGrid(list);
+  renderContainersTable(list);
+}
+
+// -----------------------------------------------------------------------------
+// 1. BENTO GRID / CARD VIEW RENDERING
+// -----------------------------------------------------------------------------
+function renderContainersGrid(list) {
+  const grid = document.getElementById("containers-grid-view");
+  if (!grid) return;
+
+  if (!list || list.length === 0) {
+    grid.innerHTML = `
+      <div class="data-card" style="padding: 32px; text-align: center; color: var(--text-muted); grid-column: 1 / -1;">
+        <div style="font-size: 2rem; margin-bottom: 8px;">🔍</div>
+        <div style="font-weight: 600; font-size: 1.05rem;">Không tìm thấy container nào phù hợp</div>
+        <div style="font-size: 0.85rem; margin-top: 4px;">Hãy thử đổi từ khóa tìm kiếm hoặc bấm tab "Tất cả".</div>
+      </div>
+    `;
+    return;
+  }
+
+  const hostName = window.location.hostname || "localhost";
+
+  grid.innerHTML = list.map(c => {
+    const isRunning = (c.state === "running");
+    const isPaused = (c.state === "paused");
+    const isStopped = !isRunning && !isPaused;
+    const isBusy = containerActionInProgress.has(c.id);
+
+    let stateClass = "badge-stopped";
+    let stateIcon = "🔴";
+    if (isRunning) { stateClass = "badge-running"; stateIcon = "🟢"; }
+    else if (isPaused) { stateClass = "badge-paused"; stateIcon = "⏸️"; }
+
+    const engineBadge = c.engine === 'podman'
+      ? `<span style="display:inline-flex; align-items:center; gap:3px; padding:1px 6px; font-size:0.7rem; font-weight:600; border-radius:4px; background:rgba(192,132,252,0.15); color:#c084fc; border:1px solid rgba(192,132,252,0.3);">🦭 Podman</span>`
+      : `<span style="display:inline-flex; align-items:center; gap:3px; padding:1px 6px; font-size:0.7rem; font-weight:600; border-radius:4px; background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.3);">🐳 Docker</span>`;
+
+    // Realtime Metrics
+    let cpuText = "0.0%";
+    let memText = "0 MB (0%)";
+    let netText = "📥 0 B | 📤 0 B";
+    if (isRunning) {
+      const st = containersStatsMap[c.id];
+      if (st) {
+        cpuText = `${st.cpu_percent ? st.cpu_percent.toFixed(1) : "0.0"}%`;
+        const memMB = st.mem_usage_mb ? formatMBHelperCtr(st.mem_usage_mb) : "0 MB";
+        const memPct = st.mem_percent ? st.mem_percent.toFixed(1) : "0.0";
+        memText = `${memMB} (${memPct}%)`;
+        const rxMB = st.net_rx_mb ? formatMBHelperCtr(st.net_rx_mb) : "0 B";
+        const txMB = st.net_tx_mb ? formatMBHelperCtr(st.net_tx_mb) : "0 B";
+        netText = `📥 ${rxMB} | 📤 ${txMB}`;
+      } else {
+        cpuText = "Đang đo...";
+        memText = "Đang đo...";
+        netText = "Đang đo...";
+      }
+    } else {
+      cpuText = "Off";
+      memText = "Off";
+      netText = "Off";
+    }
+
+    // Ports
+    let portsHTML = `<span style="font-size: 0.78rem; color: var(--text-muted);">Không có port public</span>`;
+    if (c.ports && c.ports.length > 0) {
+      portsHTML = c.ports.map(p => {
+        if (p.public_port > 0) {
+          const url = `http://${hostName}:${p.public_port}`;
+          return `<a href="${url}" target="_blank" class="port-link" title="Mở cổng trên trình duyệt">🔗 ${p.public_port}:${p.private_port}</a>`;
+        }
+        return `<span style="font-family: monospace; font-size: 0.75rem; color: var(--text-muted); background: rgba(255,255,255,0.03); padding: 1px 5px; border-radius: 3px;">${p.private_port}/${p.type}</span>`;
+      }).join(" ");
+    }
+
+    // Action button states
+    const startDisabled = isRunning || isBusy;
+    const stopDisabled = isStopped || isBusy;
+    const restartDisabled = isStopped || isBusy;
+    const killDisabled = isStopped || isBusy;
+
+    const startAction = isPaused ? 'unpause' : 'start';
+    const onClickStart = startDisabled ? '' : `containerAction('${c.id}','${startAction}')`;
+    const onClickStop = stopDisabled ? '' : `containerAction('${c.id}','stop')`;
+    const onClickRestart = restartDisabled ? '' : `containerAction('${c.id}','restart')`;
+    const onClickKill = killDisabled ? '' : `confirmKillContainer('${c.id}','${escapeHTML(c.name)}')`;
+
+    const loadingIndicator = isBusy ? `<span class="ctr-action-loading" title="Đang xử lý..." style="font-size:0.85rem;">⏳ Đang thực thi...</span>` : "";
+
+    return `
+      <div class="container-card ${isStopped ? 'card-stopped' : ''}">
+        <!-- Card Header -->
+        <div class="container-card-header">
+          <div>
+            <div class="container-card-title">
+              <span>${escapeHTML(c.name)}</span>
+              ${engineBadge}
+            </div>
+            <div class="container-card-id">ID: ${c.short_id}</div>
+          </div>
+          <span class="badge ${stateClass}">${stateIcon} ${c.state.toUpperCase()}</span>
+        </div>
+
+        <!-- Project Tag if part of Compose -->
+        ${c.project ? `
+          <div style="font-size: 0.78rem; color: var(--accent-blue); display: flex; align-items: center; gap: 4px;">
+            <span>🧩 Stack:</span> <strong>${escapeHTML(c.project)}</strong>
+            ${c.service ? `<span style="color: var(--text-muted); font-size: 0.72rem;">(service: ${escapeHTML(c.service)})</span>` : ''}
+          </div>
+        ` : `
+          <div style="font-size: 0.76rem; color: var(--text-muted);">
+            📦 Container độc lập (Standalone)
+          </div>
+        `}
+
+        <!-- Image info -->
+        <div class="container-card-image" title="${escapeHTML(c.image)}">
+          🏷️ ${escapeHTML(c.image)}
+        </div>
+
+        <!-- Realtime Resource Metrics Chips -->
+        <div class="container-card-metrics">
+          <div class="card-metric-col">
+            <span class="card-metric-label">⚡ CPU</span>
+            <span class="card-metric-val" style="color: #38bdf8;">${cpuText}</span>
+          </div>
+          <div class="card-metric-col">
+            <span class="card-metric-label">🧠 RAM</span>
+            <span class="card-metric-val" style="color: #818cf8;">${memText}</span>
+          </div>
+          <div class="card-metric-col">
+            <span class="card-metric-label">🌐 NET</span>
+            <span class="card-metric-val" style="color: #a855f7; font-size: 0.72rem;">${netText}</span>
+          </div>
+        </div>
+
+        <!-- Ports list -->
+        <div class="container-card-ports">
+          ${portsHTML}
+        </div>
+
+        <!-- Card Action Footer -->
+        <div class="container-card-footer">
+          <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+            <!-- 🔄⚡ Recreate Button (Prominent) -->
+            <button class="btn btn-sm btn-recreate" onclick="openRecreateModalForContainer('${c.id}')" title="Tái tạo lại container (Recreate với image & config mới nhất)">
+              🔄⚡ Recreate
+            </button>
+
+            <!-- ▶️ Start / ⏹️ Stop Toggle -->
+            ${isRunning ? `
+              <button class="btn-icon ctr-btn-stop" onclick="${onClickStop}" title="Dừng container" ${stopDisabled ? 'disabled' : ''}>⏹️</button>
+            ` : `
+              <button class="btn-icon ctr-btn-start" onclick="${onClickStart}" title="Khởi động container" ${startDisabled ? 'disabled' : ''}>▶️</button>
+            `}
+
+            <!-- 🔄 Restart -->
+            <button class="btn-icon ctr-btn-restart" onclick="${onClickRestart}" title="Khởi động lại (Restart)" ${restartDisabled ? 'disabled' : ''}>🔄</button>
+
+            <!-- 💻 Terminal (if running) -->
+            ${isRunning ? `
+              <button class="btn-icon" onclick="openTerminalModal('${c.id}', '${escapeHTML(c.name)}')" title="Mở Web Terminal Shell">💻</button>
+            ` : ''}
+
+            <!-- 📋 Logs -->
+            <button class="btn-icon" onclick="openLogsModal('${c.id}', '${escapeHTML(c.name)}')" title="Xem Live Logs">📋</button>
+          </div>
+
+          <!-- Secondary actions -->
+          <div style="display: flex; gap: 4px; align-items: center;">
+            ${loadingIndicator}
+            <button class="btn-icon" style="color: var(--accent-blue);" onclick="diagnoseContainerWithAI('${c.id}', '${escapeHTML(c.name)}')" title="AI Phân tích lỗi">🤖</button>
+            <button class="btn-icon ctr-btn-kill" onclick="${onClickKill}" title="Kill Container (SIGKILL khẩn cấp)" ${killDisabled ? 'disabled' : ''}>💀</button>
+            <button class="btn-icon" style="color: var(--accent-red);" onclick="removeContainerPrompt('${c.id}', '${escapeHTML(c.name)}')" title="Xóa Container">🗑️</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+// -----------------------------------------------------------------------------
+// 2. COMPACT TABLE VIEW RENDERING
+// -----------------------------------------------------------------------------
+function renderContainersTable(list) {
   const tbody = document.getElementById("tbody-containers");
   if (!tbody) return;
 
   if (!list || list.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color: var(--text-muted);">Không tìm thấy container nào trên server.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color: var(--text-muted); padding: 24px;">Không tìm thấy container nào phù hợp.</td></tr>`;
     return;
   }
 
   const hostName = window.location.hostname || "localhost";
 
   tbody.innerHTML = list.map(c => {
-    // State badge
     let stateClass = "badge-stopped";
     let stateIcon = "🔴";
     if (c.state === "running") { stateClass = "badge-running"; stateIcon = "🟢"; }
     else if (c.state === "paused") { stateClass = "badge-paused"; stateIcon = "⏸️"; }
 
-    // Stats HTML
-    let statsHTML = `<span style="color: var(--text-muted); font-size: 0.8rem;">Off / Stopped</span>`;
+    let statsHTML = `<span style="color: var(--text-muted); font-size: 0.8rem;">Off</span>`;
     if (c.state === "running") {
       const st = containersStatsMap[c.id];
       if (st) {
@@ -65,7 +383,7 @@ function renderContainers(list) {
         const txMB = st.net_tx_mb ? formatMBHelperCtr(st.net_tx_mb) : "0 B";
 
         statsHTML = `
-          <div style="font-size: 0.8rem; font-family: monospace; line-height: 1.4;">
+          <div style="font-size: 0.78rem; font-family: monospace; line-height: 1.35;">
             <div><span style="color: #38bdf8; font-weight: 600;">⚡ CPU:</span> ${cpuPct}%</div>
             <div><span style="color: #818cf8; font-weight: 600;">🧠 RAM:</span> ${memMB} (${memPct}%)</div>
             <div><span style="color: #a855f7; font-weight: 600;">🌐 NET:</span> 📥 ${rxMB} | 📤 ${txMB}</div>
@@ -76,7 +394,6 @@ function renderContainers(list) {
       }
     }
 
-    // Ports HTML
     let portsHTML = `<span style="color: var(--text-muted); font-size: 0.8rem;">None</span>`;
     if (c.ports && c.ports.length > 0) {
       portsHTML = c.ports.map(p => {
@@ -84,11 +401,10 @@ function renderContainers(list) {
           const url = `http://${hostName}:${p.public_port}`;
           return `<a href="${url}" target="_blank" class="port-link">🔗 ${p.public_port}:${p.private_port}</a>`;
         }
-        return `<span style="font-family: monospace; font-size: 0.8rem; color: var(--text-muted);">${p.private_port}/${p.type}</span>`;
+        return `<span style="font-family: monospace; font-size: 0.75rem; color: var(--text-muted);">${p.private_port}/${p.type}</span>`;
       }).join(" ");
     }
 
-    // IPs HTML
     let ipsHTML = `<span style="color: var(--text-muted); font-size: 0.8rem;">None</span>`;
     if (c.ips && Object.keys(c.ips).length > 0) {
       ipsHTML = Object.entries(c.ips).map(([net, ip]) => {
@@ -101,19 +417,10 @@ function renderContainers(list) {
     const isStopped = !isRunning && !isPaused;
     const isBusy    = containerActionInProgress.has(c.id);
 
-    // ---- Independent action buttons always visible ----
-    // Start: enabled only when stopped or paused
     const startDisabled   = isRunning  || isBusy;
     const stopDisabled    = isStopped  || isBusy;
     const restartDisabled = isStopped  || isBusy;
     const killDisabled    = isStopped  || isBusy;
-
-    const startTitle   = isRunning ? "Container đang chạy" : "Start Container";
-    const stopTitle    = isStopped ? "Container đã dừng"   : "Stop Container";
-    const restartTitle = isStopped ? "Container đã dừng"   : "Restart Container";
-    const killTitle    = isStopped ? "Container đã dừng"   : "Kill Container (Buộc dừng khẩn cấp bằng SIGKILL)";
-
-    const loadingSpan  = isBusy ? `<span class="ctr-action-loading" title="Đang xử lý...">⏳</span>` : "";
 
     const startAction  = isPaused ? 'unpause' : 'start';
     const onClickStart   = startDisabled   ? '' : `containerAction('${c.id}','${startAction}')`;
@@ -138,7 +445,7 @@ function renderContainers(list) {
           <span class="badge ${stateClass}">${stateIcon} ${c.state.toUpperCase()}</span>
         </td>
         <td>
-          <div style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85rem;" title="${escapeHTML(c.image)}">
+          <div style="max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.82rem; font-family: monospace;" title="${escapeHTML(c.image)}">
             ${escapeHTML(c.image)}
           </div>
         </td>
@@ -146,39 +453,42 @@ function renderContainers(list) {
         <td>${portsHTML}</td>
         <td>${ipsHTML}</td>
         <td>
-          <div class="action-btns">
-            ${loadingSpan}
+          <div class="action-btns" style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
+            <!-- 🔄⚡ Recreate Button -->
+            <button class="btn btn-sm btn-recreate" style="padding: 3px 8px; font-size: 0.75rem;" onclick="openRecreateModalForContainer('${c.id}')" title="Recreate Container">
+              🔄⚡
+            </button>
 
-            <!-- ▶️ Start – luôn hiển thị -->
+            <!-- ▶️ Start -->
             <button class="btn-icon ctr-btn-start${startDisabled ? ' ctr-btn-disabled' : ''}"
               onclick="${onClickStart}"
-              title="${startTitle}"
+              title="Start Container"
               ${startDisabled ? 'disabled' : ''}>▶️</button>
 
-            <!-- ⏹️ Stop – luôn hiển thị -->
+            <!-- ⏹️ Stop -->
             <button class="btn-icon ctr-btn-stop${stopDisabled ? ' ctr-btn-disabled' : ''}"
               onclick="${onClickStop}"
-              title="${stopTitle}"
+              title="Stop Container"
               ${stopDisabled ? 'disabled' : ''}>⏹️</button>
 
-            <!-- 🔄 Restart – luôn hiển thị -->
+            <!-- 🔄 Restart -->
             <button class="btn-icon ctr-btn-restart${restartDisabled ? ' ctr-btn-disabled' : ''}"
               onclick="${onClickRestart}"
-              title="${restartTitle}"
+              title="Restart Container"
               ${restartDisabled ? 'disabled' : ''}>🔄</button>
 
-            <!-- 💀 Kill – luôn hiển thị -->
+            <!-- 💀 Kill -->
             <button class="btn-icon ctr-btn-kill${killDisabled ? ' ctr-btn-disabled' : ''}"
               onclick="${onClickKill}"
-              title="${killTitle}"
+              title="Kill Container (SIGKILL)"
               ${killDisabled ? 'disabled' : ''}>💀</button>
 
-            <!-- 💻 Terminal: chỉ khi đang running -->
+            <!-- 💻 Terminal -->
             ${isRunning ? `<button class="btn-icon" onclick="openTerminalModal('${c.id}', '${escapeHTML(c.name)}')" title="Terminal Shell">💻</button>` : ''}
 
-            <button class="btn-icon" onclick="openLogsModal('${c.id}', '${escapeHTML(c.name)}')" title="View Live Logs">📋</button>
-            <button class="btn-icon" style="color: var(--accent-blue);" onclick="diagnoseContainerWithAI('${c.id}', '${escapeHTML(c.name)}')" title="AI Phân tích sự cố">🤖</button>
-            <button class="btn-icon" style="color: var(--accent-red);" onclick="removeContainerPrompt('${c.id}', '${escapeHTML(c.name)}')" title="Remove Container">🗑️</button>
+            <button class="btn-icon" onclick="openLogsModal('${c.id}', '${escapeHTML(c.name)}')" title="View Logs">📋</button>
+            <button class="btn-icon" style="color: var(--accent-blue);" onclick="diagnoseContainerWithAI('${c.id}', '${escapeHTML(c.name)}')" title="AI Diagnose">🤖</button>
+            <button class="btn-icon" style="color: var(--accent-red);" onclick="removeContainerPrompt('${c.id}', '${escapeHTML(c.name)}')" title="Remove">🗑️</button>
           </div>
         </td>
       </tr>
@@ -186,6 +496,249 @@ function renderContainers(list) {
   }).join("");
 }
 
+// -----------------------------------------------------------------------------
+// 3. RECREATE MODAL & EXECUTION
+// -----------------------------------------------------------------------------
+function openRecreateModalForContainer(containerId) {
+  const ctr = rawContainersData.find(c => c.id === containerId || c.short_id === containerId);
+  if (!ctr) return;
+
+  activeRecreateTarget = {
+    type: "container",
+    id: ctr.id,
+    name: ctr.name,
+    image: ctr.image,
+    project: ctr.project || "",
+    service: ctr.service || "",
+    working_dir: ctr.working_dir || "",
+    config_file: ctr.config_file || "",
+    engine: ctr.engine || "docker",
+  };
+
+  const titleEl = document.getElementById("recreate-modal-title");
+  const infoEl = document.getElementById("recreate-target-info");
+  const buildWrap = document.getElementById("recreate-opt-build-wrap");
+  const outputWrap = document.getElementById("recreate-output-wrap");
+  const logPre = document.getElementById("recreate-log-output");
+  const btnRun = document.getElementById("btn-run-recreate");
+
+  if (titleEl) {
+    titleEl.innerHTML = `<span>🔄⚡</span> <span>Tái Lập Trình Container: <strong>${escapeHTML(ctr.name)}</strong></span>`;
+  }
+
+  if (buildWrap) {
+    // Show build option only if part of compose project
+    buildWrap.style.display = ctr.project ? "flex" : "none";
+  }
+
+  if (infoEl) {
+    infoEl.innerHTML = `
+      <div style="display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 0.88rem;">
+        <span style="color: var(--text-muted);">Container Name:</span>
+        <strong style="color: #38bdf8;">${escapeHTML(ctr.name)}</strong>
+
+        <span style="color: var(--text-muted);">Image Tag:</span>
+        <code style="font-size: 0.82rem; color: #a5b4fc;">${escapeHTML(ctr.image)}</code>
+
+        <span style="color: var(--text-muted);">Phân loại:</span>
+        <div>
+          ${ctr.project ? `
+            <span class="badge badge-paused" style="font-size:0.75rem;">🧩 Compose Stack: ${escapeHTML(ctr.project)} (service: ${escapeHTML(ctr.service || ctr.name)})</span>
+          ` : `
+            <span class="badge" style="background: rgba(255,255,255,0.06); font-size:0.75rem;">📦 Container độc lập</span>
+          `}
+        </div>
+
+        ${ctr.working_dir ? `
+          <span style="color: var(--text-muted);">Thư mục Compose:</span>
+          <code style="font-size: 0.78rem; color: var(--text-secondary);">${escapeHTML(ctr.working_dir)}</code>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  if (outputWrap) outputWrap.style.display = "none";
+  if (logPre) logPre.textContent = "";
+  if (btnRun) {
+    btnRun.disabled = false;
+    btnRun.innerHTML = "🚀 Bắt Đầu Recreate";
+  }
+
+  const modal = document.getElementById("modal-recreate");
+  if (modal) modal.classList.add("active");
+}
+
+function openRecreateModalForCompose(project, service = "", workingDir = "", configFile = "") {
+  activeRecreateTarget = {
+    type: service ? "compose_service" : "compose_stack",
+    project: project,
+    service: service,
+    working_dir: workingDir,
+    config_file: configFile,
+  };
+
+  const titleEl = document.getElementById("recreate-modal-title");
+  const infoEl = document.getElementById("recreate-target-info");
+  const buildWrap = document.getElementById("recreate-opt-build-wrap");
+  const outputWrap = document.getElementById("recreate-output-wrap");
+  const logPre = document.getElementById("recreate-log-output");
+  const btnRun = document.getElementById("btn-run-recreate");
+
+  if (titleEl) {
+    if (service) {
+      titleEl.innerHTML = `<span>🔄⚡</span> <span>Recreate Service: <strong>${escapeHTML(service)}</strong> (Stack: ${escapeHTML(project)})</span>`;
+    } else {
+      titleEl.innerHTML = `<span>🔄⚡</span> <span>Recreate Toàn Bộ Stack: <strong>${escapeHTML(project)}</strong></span>`;
+    }
+  }
+
+  if (buildWrap) buildWrap.style.display = "flex";
+
+  if (infoEl) {
+    infoEl.innerHTML = `
+      <div style="display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 0.88rem;">
+        <span style="color: var(--text-muted);">Compose Project:</span>
+        <strong style="color: #38bdf8;">${escapeHTML(project)}</strong>
+
+        ${service ? `
+          <span style="color: var(--text-muted);">Service Recreate:</span>
+          <strong style="color: #818cf8;">${escapeHTML(service)}</strong>
+        ` : `
+          <span style="color: var(--text-muted);">Phạm vi:</span>
+          <strong>Toàn bộ các container trong Stack</strong>
+        `}
+
+        ${workingDir ? `
+          <span style="color: var(--text-muted);">Working Dir:</span>
+          <code style="font-size: 0.8rem; color: var(--text-secondary);">${escapeHTML(workingDir)}</code>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  if (outputWrap) outputWrap.style.display = "none";
+  if (logPre) logPre.textContent = "";
+  if (btnRun) {
+    btnRun.disabled = false;
+    btnRun.innerHTML = "🚀 Bắt Đầu Recreate";
+  }
+
+  const modal = document.getElementById("modal-recreate");
+  if (modal) modal.classList.add("active");
+}
+
+function closeRecreateModal() {
+  const modal = document.getElementById("modal-recreate");
+  if (modal) modal.classList.remove("active");
+  activeRecreateTarget = null;
+}
+
+async function executeRecreateAction() {
+  if (!activeRecreateTarget) return;
+
+  const btnRun = document.getElementById("btn-run-recreate");
+  const btnCancel = document.getElementById("btn-cancel-recreate");
+  const outputWrap = document.getElementById("recreate-output-wrap");
+  const logPre = document.getElementById("recreate-log-output");
+  const statusBadge = document.getElementById("recreate-status-badge");
+
+  const pullOpt = document.getElementById("recreate-opt-pull")?.checked ?? true;
+  const buildOpt = document.getElementById("recreate-opt-build")?.checked ?? false;
+
+  if (btnRun) {
+    btnRun.disabled = true;
+    btnRun.innerHTML = "⏳ Đang xử lý...";
+  }
+  if (btnCancel) btnCancel.disabled = true;
+
+  if (outputWrap) outputWrap.style.display = "block";
+  if (statusBadge) {
+    statusBadge.className = "badge badge-paused";
+    statusBadge.textContent = "Đang thực thi...";
+  }
+  if (logPre) {
+    logPre.textContent = "⏳ Đang kết nối và chuẩn bị recreate...\n";
+  }
+
+  try {
+    let apiUrl = "";
+    let payload = {};
+
+    if (activeRecreateTarget.type === "container") {
+      apiUrl = "/api/containers/recreate";
+      payload = {
+        id: activeRecreateTarget.id,
+        pull: pullOpt,
+      };
+    } else {
+      apiUrl = "/api/compose/recreate";
+      payload = {
+        project: activeRecreateTarget.project,
+        service: activeRecreateTarget.service || "",
+        working_dir: activeRecreateTarget.working_dir || "",
+        config_file: activeRecreateTarget.config_file || "",
+        pull: pullOpt,
+        build: buildOpt,
+      };
+    }
+
+    const res = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      if (statusBadge) {
+        statusBadge.className = "badge badge-stopped";
+        statusBadge.textContent = "❌ Lỗi";
+      }
+      if (logPre) {
+        logPre.textContent = (data.output || "") + `\n\n❌ Lỗi: ${data.error || "Không xác định"}`;
+      }
+      showContainerToast(`❌ Recreate thất bại: ${data.error}`, "error");
+    } else {
+      if (statusBadge) {
+        statusBadge.className = "badge badge-running";
+        statusBadge.textContent = "✅ Hoàn tất";
+      }
+      if (logPre) {
+        logPre.textContent = data.output || "✅ Recreate thành công!";
+      }
+      showContainerToast("✅ Recreate thành công! Danh sách đang được làm mới.", "success");
+
+      // Auto-reload data
+      setTimeout(() => {
+        loadContainers();
+        if (typeof loadComposeStacks === "function") {
+          loadComposeStacks();
+        }
+      }, 1500);
+    }
+  } catch (err) {
+    if (statusBadge) {
+      statusBadge.className = "badge badge-stopped";
+      statusBadge.textContent = "❌ Lỗi kết nối";
+    }
+    if (logPre) {
+      logPre.textContent += `\n❌ Lỗi mạng / hệ thống: ${err.message}`;
+    }
+    showContainerToast(`❌ Lỗi: ${err.message}`, "error");
+  } finally {
+    if (btnRun) {
+      btnRun.disabled = false;
+      btnRun.innerHTML = "Đóng";
+      btnRun.onclick = closeRecreateModal;
+    }
+    if (btnCancel) btnCancel.disabled = false;
+  }
+}
+
+// -----------------------------------------------------------------------------
+// 4. ACTION HELPERS & UTILITIES
+// -----------------------------------------------------------------------------
 function formatMBHelperCtr(mb) {
   if (!mb || isNaN(mb) || mb === 0) return "0 MB";
   if (typeof formatBytes === "function") {
@@ -195,26 +748,12 @@ function formatMBHelperCtr(mb) {
   return mb.toFixed(1) + " MB";
 }
 
-// Search Filter
-document.getElementById("search-ctrs")?.addEventListener("input", (e) => {
-  const query = e.target.value.toLowerCase().trim();
-  if (!query) {
-    renderContainers(rawContainersData);
-    return;
-  }
-  const filtered = rawContainersData.filter(c => {
-    return c.name.toLowerCase().includes(query) ||
-           c.image.toLowerCase().includes(query) ||
-           c.short_id.toLowerCase().includes(query) ||
-           (c.project && c.project.toLowerCase().includes(query)) ||
-           (c.ports && c.ports.some(p => p.public_port.toString().includes(query))) ||
-           (c.ips && Object.values(c.ips).some(ip => ip.includes(query)));
-  });
-  renderContainers(filtered);
+// Search Filter Listener
+document.getElementById("search-ctrs")?.addEventListener("input", () => {
+  applyContainerFilters();
 });
 
 function showContainerToast(msg, type = "info") {
-  // Reuse global toast if available, otherwise show simple notification
   if (typeof showToast === "function") {
     showToast(msg, type);
     return;
@@ -244,7 +783,7 @@ async function confirmKillContainer(id, name) {
 async function containerAction(id, action) {
   if (containerActionInProgress.has(id)) return;
   containerActionInProgress.add(id);
-  renderContainers(rawContainersData); // re-render to show loading state
+  applyContainerFilters(); // re-render to show loading state
 
   const label = ACTION_LABELS[action] || action;
   try {

@@ -90,6 +90,7 @@ func main() {
 	mux.HandleFunc("/api/engine/info", authMiddleware(handleEngineInfo))
 	mux.HandleFunc("/api/containers", authMiddleware(handleContainers))
 	mux.HandleFunc("/api/containers/action", authMiddleware(handleContainerAction))
+	mux.HandleFunc("/api/containers/recreate", authMiddleware(handleContainerRecreate))
 	mux.HandleFunc("/api/containers/remove", authMiddleware(handleContainerRemove))
 	mux.HandleFunc("/api/containers/logs", authMiddleware(handleContainerLogsAPI))
 	mux.HandleFunc("/api/containers/stats", authMiddleware(handleContainerStatsAPI))
@@ -99,6 +100,7 @@ func main() {
 
 	mux.HandleFunc("/api/compose", authMiddleware(handleComposeStacks))
 	mux.HandleFunc("/api/compose/action", authMiddleware(handleComposeAction))
+	mux.HandleFunc("/api/compose/recreate", authMiddleware(handleComposeRecreate))
 
 	mux.HandleFunc("/api/images", authMiddleware(handleImages))
 	mux.HandleFunc("/api/images/remove", authMiddleware(handleImageRemove))
@@ -382,6 +384,37 @@ func handleContainerAction(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, 200, map[string]string{"status": "ok"})
 }
 
+func handleContainerRecreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	var req struct {
+		ID   string `json:"id"`
+		Pull bool   `json:"pull"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonResponse(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	if req.ID == "" {
+		jsonResponse(w, 400, map[string]string{"error": "missing container id"})
+		return
+	}
+	out, err := client.RecreateContainer(req.ID, req.Pull)
+	if err != nil {
+		jsonResponse(w, 500, map[string]interface{}{
+			"error":  err.Error(),
+			"output": out,
+		})
+		return
+	}
+	jsonResponse(w, 200, map[string]interface{}{
+		"status": "ok",
+		"output": out,
+	})
+}
+
 func handleContainerRemove(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
@@ -505,6 +538,41 @@ func handleComposeAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonResponse(w, 200, map[string]string{"status": "ok"})
+}
+
+func handleComposeRecreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	var req struct {
+		Project    string `json:"project"`
+		Service    string `json:"service"`
+		WorkingDir string `json:"working_dir"`
+		ConfigFile string `json:"config_file"`
+		Pull       bool   `json:"pull"`
+		Build      bool   `json:"build"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonResponse(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	if req.Project == "" {
+		jsonResponse(w, 400, map[string]string{"error": "missing project name"})
+		return
+	}
+	out, err := client.RecreateCompose(req.Project, req.Service, req.WorkingDir, req.ConfigFile, req.Pull, req.Build)
+	if err != nil {
+		jsonResponse(w, 500, map[string]interface{}{
+			"error":  err.Error(),
+			"output": out,
+		})
+		return
+	}
+	jsonResponse(w, 200, map[string]interface{}{
+		"status": "ok",
+		"output": out,
+	})
 }
 
 func handleImages(w http.ResponseWriter, r *http.Request) {

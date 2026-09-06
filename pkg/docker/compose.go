@@ -2,6 +2,9 @@ package docker
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -24,10 +27,14 @@ type ComposeService struct {
 	NetRxMB    float64 `json:"net_rx_mb"`
 	NetTxMB    float64 `json:"net_tx_mb"`
 	Engine     string  `json:"engine"` // "podman" or "docker"
+	WorkingDir string  `json:"working_dir,omitempty"`
+	ConfigFile string  `json:"config_file,omitempty"`
 }
 
 type ComposeStack struct {
 	Project         string           `json:"project"`
+	WorkingDir      string           `json:"working_dir,omitempty"`
+	ConfigFile      string           `json:"config_file,omitempty"`
 	Services        []ComposeService `json:"services"`
 	Total           int              `json:"total"`
 	RunningCount    int              `json:"running_count"`
@@ -76,6 +83,28 @@ func (c *Client) ListComposeStacksWithStats(includeStats bool) ([]ComposeStack, 
 			stacksMap[stackKey] = stack
 		}
 
+		workingDir := ""
+		configFile := ""
+		if ctr.Labels != nil {
+			if wd, ok := ctr.Labels["com.docker.compose.project.working_dir"]; ok && wd != "" {
+				workingDir = wd
+			} else if wd, ok := ctr.Labels["io.podman.compose.project.working_dir"]; ok && wd != "" {
+				workingDir = wd
+			}
+			if cf, ok := ctr.Labels["com.docker.compose.project.config_files"]; ok && cf != "" {
+				configFile = cf
+			} else if cf, ok := ctr.Labels["io.podman.compose.project.config_files"]; ok && cf != "" {
+				configFile = cf
+			}
+		}
+
+		if stack.WorkingDir == "" && workingDir != "" {
+			stack.WorkingDir = workingDir
+		}
+		if stack.ConfigFile == "" && configFile != "" {
+			stack.ConfigFile = configFile
+		}
+
 		srvName := ""
 		if ctr.Labels != nil {
 			if s, ok := ctr.Labels["com.docker.compose.service"]; ok && s != "" {
@@ -96,14 +125,16 @@ func (c *Client) ListComposeStacksWithStats(includeStats bool) ([]ComposeStack, 
 		}
 
 		service := ComposeService{
-			ID:       ctr.ID,
-			Name:     ctr.Name,
-			Service:  srvName,
-			State:    ctr.State,
-			Status:   ctr.Status,
-			Image:    ctr.Image,
-			PortsStr: portsStr,
-			Engine:   ctr.Engine,
+			ID:         ctr.ID,
+			Name:       ctr.Name,
+			Service:    srvName,
+			State:      ctr.State,
+			Status:     ctr.Status,
+			Image:      ctr.Image,
+			PortsStr:   portsStr,
+			Engine:     ctr.Engine,
+			WorkingDir: workingDir,
+			ConfigFile: configFile,
 		}
 
 		if includeStats && allStats != nil {
@@ -123,37 +154,48 @@ func (c *Client) ListComposeStacksWithStats(includeStats bool) ([]ComposeStack, 
 				service.MemPercent = st.MemPercent
 				service.NetRxMB = st.NetRxMB
 				service.NetTxMB = st.NetTxMB
-
-				stack.TotalCPUPercent += st.CPUPercent
-				stack.TotalMemUsageMB += st.MemUsageMB
-				if st.MemLimitMB > stack.TotalMemLimitMB {
-					stack.TotalMemLimitMB = st.MemLimitMB
-				}
-				stack.TotalNetRxMB += st.NetRxMB
-				stack.TotalNetTxMB += st.NetTxMB
 			}
 		}
 
 		stack.Services = append(stack.Services, service)
-		stack.Total++
-		if ctr.State == "running" {
-			stack.RunningCount++
-		}
 	}
 
-	result := make([]ComposeStack, 0)
+	result := make([]ComposeStack, 0, len(stacksMap))
 	for _, stack := range stacksMap {
-		if stack.RunningCount == stack.Total && stack.Total > 0 {
+		stack.Total = len(stack.Services)
+		runningCount := 0
+		var totalCPU, totalMemUsage, totalMemLimit, totalNetRx, totalNetTx float64
+
+		for _, s := range stack.Services {
+			if s.State == "running" {
+				runningCount++
+			}
+			totalCPU += s.CPUPercent
+			totalMemUsage += s.MemUsageMB
+			if s.MemLimitMB > totalMemLimit {
+				totalMemLimit = s.MemLimitMB
+			}
+			totalNetRx += s.NetRxMB
+			totalNetTx += s.NetTxMB
+		}
+		stack.RunningCount = runningCount
+
+		if runningCount == stack.Total && stack.Total > 0 {
 			stack.State = "running"
-		} else if stack.RunningCount > 0 {
+		} else if runningCount > 0 {
 			stack.State = "partial"
 		} else {
 			stack.State = "stopped"
 		}
 
-		if stack.TotalMemLimitMB > 0 {
-			stack.TotalMemPercent = (stack.TotalMemUsageMB / stack.TotalMemLimitMB) * 100.0
+		stack.TotalCPUPercent = totalCPU
+		stack.TotalMemUsageMB = totalMemUsage
+		stack.TotalMemLimitMB = totalMemLimit
+		if totalMemLimit > 0 {
+			stack.TotalMemPercent = (totalMemUsage / totalMemLimit) * 100
 		}
+		stack.TotalNetRxMB = totalNetRx
+		stack.TotalNetTxMB = totalNetTx
 
 		result = append(result, *stack)
 	}
@@ -198,4 +240,101 @@ func (c *Client) StackAction(project string, action string) error {
 		return nil
 	}
 	return fmt.Errorf("stack %s not found", project)
+}
+
+// RecreateCompose executes compose up -d --force-recreate for a whole project or a single service
+func (c *Client) RecreateCompose(project, service, workingDir, configFile string, pull bool, build bool) (string, error) {
+	// Clean up project name in case "project|engine" key was passed
+	if strings.Contains(project, "|") {
+		parts := strings.Split(project, "|")
+		project = parts[0]
+	}
+
+	// 1. Locate working directory and config file from active stacks if not passed
+	if workingDir == "" || configFile == "" {
+		stacks, err := c.ListComposeStacks()
+		if err == nil {
+			for _, s := range stacks {
+				if strings.EqualFold(s.Project, project) {
+					if workingDir == "" && s.WorkingDir != "" {
+						workingDir = s.WorkingDir
+					}
+					if configFile == "" && s.ConfigFile != "" {
+						configFile = s.ConfigFile
+					}
+					break
+				}
+			}
+		}
+	}
+
+	// 2. Fallback search for common paths
+	if workingDir == "" {
+		candidates := []string{
+			filepath.Join("/home/data", project),
+			filepath.Join("/opt", project),
+			filepath.Join("/var/www", project),
+			filepath.Join("/root", project),
+		}
+		for _, cand := range candidates {
+			if info, err := os.Stat(cand); err == nil && info.IsDir() {
+				workingDir = cand
+				break
+			}
+		}
+	}
+
+	// 3. Find Compose CLI tool
+	cliCmd := ""
+	var baseArgs []string
+	if path, err := exec.LookPath("docker-compose"); err == nil {
+		cliCmd = path
+	} else if path, err := exec.LookPath("podman-compose"); err == nil {
+		cliCmd = path
+	} else if path, err := exec.LookPath("docker"); err == nil {
+		if err := exec.Command("docker", "compose", "version").Run(); err == nil {
+			cliCmd = path
+			baseArgs = append(baseArgs, "compose")
+		}
+	}
+
+	if cliCmd == "" {
+		return "", fmt.Errorf("không tìm thấy docker-compose, podman-compose hoặc docker compose CLI trên hệ thống")
+	}
+
+	// 4. Build command arguments
+	var args []string
+	args = append(args, baseArgs...)
+
+	if configFile != "" {
+		args = append(args, "-f", configFile)
+	}
+
+	args = append(args, "up", "-d", "--force-recreate")
+	if pull {
+		args = append(args, "--pull", "always")
+	}
+	if build {
+		args = append(args, "--build")
+	}
+	if service != "" {
+		args = append(args, service)
+	}
+
+	cmd := exec.Command(cliCmd, args...)
+	if workingDir != "" {
+		cmd.Dir = workingDir
+	}
+	cmd.Env = os.Environ()
+
+	out, err := cmd.CombinedOutput()
+	outStr := strings.TrimSpace(string(out))
+	cmdLineStr := fmt.Sprintf("%s %s", filepath.Base(cliCmd), strings.Join(args, " "))
+
+	if err != nil {
+		return outStr, fmt.Errorf("lỗi thực thi '%s' (Dir: %s): %v\n\n%s", cmdLineStr, workingDir, err, outStr)
+	}
+
+	resultHeader := fmt.Sprintf("✅ Thực thi thành công: %s\n📂 Thư mục làm việc: %s\n========================================\n", cmdLineStr, workingDir)
+	return resultHeader + outStr, nil
 }
