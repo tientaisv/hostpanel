@@ -138,10 +138,12 @@ function renderComposeStacks(stacks) {
             ${srv.id ? `
               <div class="action-btns" style="display: flex; gap: 4px; align-items: center;">
                 <button class="btn-icon btn-recreate" style="padding: 2px 6px; font-size: 0.75rem;" onclick="openRecreateModalForCompose('${escapeHTML(st.project)}', '${escapeHTML(srv.service || srv.name)}', '${escapeHTML(st.working_dir || '')}', '${escapeHTML(st.config_file || '')}')" title="Recreate Service (docker compose up -d --force-recreate ${escapeHTML(srv.service || srv.name)})">🔄⚡</button>
-                <button class="btn-icon ctr-btn-start" onclick="containerActionFromCompose('${srv.id}', 'start')" title="Start Service" ${srv.state === 'running' ? 'disabled' : ''}>▶️</button>
-                <button class="btn-icon ctr-btn-stop" onclick="containerActionFromCompose('${srv.id}', 'stop')" title="Stop Service" ${srv.state !== 'running' ? 'disabled' : ''}>⏹️</button>
+                ${srv.state === 'running' ? `
+                  <button class="btn-icon ctr-btn-stop" onclick="containerActionFromCompose('${srv.id}', 'stop')" title="Stop Service">⏹️</button>
+                ` : `
+                  <button class="btn-icon ctr-btn-start" onclick="containerActionFromCompose('${srv.id}', 'start')" title="Start Service">▶️</button>
+                `}
                 <button class="btn-icon ctr-btn-restart" onclick="containerActionFromCompose('${srv.id}', 'restart')" title="Restart Service" ${srv.state !== 'running' ? 'disabled' : ''}>🔄</button>
-                <button class="btn-icon ctr-btn-kill" onclick="confirmKillContainerFromCompose('${srv.id}', '${escapeHTML(srv.name || srv.service)}')" title="Kill Service (SIGKILL khẩn cấp)" ${srv.state !== 'running' ? 'disabled' : ''}>💀</button>
               </div>
             ` : ''}
           </div>
@@ -162,12 +164,14 @@ function renderComposeStacks(stacks) {
               : `<span style="display:inline-block; padding:1px 6px; font-size:0.7rem; font-weight:600; border-radius:4px; background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.3);">🐳 Docker</span>`}
             <span class="badge ${stateClass}" data-role="stack-badge">${stateText} (${st.running_count}/${st.total})</span>
           </div>
-          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <div style="display: flex; gap: 8px; align-items: center;">
             <button class="btn btn-recreate" onclick="openRecreateModalForCompose('${escapeHTML(st.project)}', '', '${escapeHTML(st.working_dir || '')}', '${escapeHTML(st.config_file || '')}')" title="Tái tạo lại toàn bộ Stack (docker compose up -d --force-recreate)">🔄⚡ Recreate Stack</button>
-            <button class="btn btn-secondary" onclick="composeAction('${escapeHTML(st.project)}', '${escapeHTML(engineName)}', 'start')" ${st.state === 'running' ? 'disabled' : ''}>▶️ Start</button>
+            ${st.state === 'running' ? `
+              <button class="btn btn-secondary" onclick="composeAction('${escapeHTML(st.project)}', '${escapeHTML(engineName)}', 'stop')" style="color: #f87171;">⏹️ Stop</button>
+            ` : `
+              <button class="btn btn-secondary" onclick="composeAction('${escapeHTML(st.project)}', '${escapeHTML(engineName)}', 'start')">▶️ Start</button>
+            `}
             <button class="btn btn-secondary" onclick="composeAction('${escapeHTML(st.project)}', '${escapeHTML(engineName)}', 'restart')">🔄 Restart</button>
-            <button class="btn btn-secondary" onclick="composeAction('${escapeHTML(st.project)}', '${escapeHTML(engineName)}', 'stop')" style="color: #f87171;" ${st.state === 'stopped' ? 'disabled' : ''}>⏹️ Stop</button>
-            <button class="btn btn-danger" onclick="confirmKillCompose('${escapeHTML(st.project)}', '${escapeHTML(engineName)}')" style="background: rgba(244, 63, 94, 0.2); border: 1px solid #f43f5e; color: #fda4af;" ${st.state === 'stopped' ? 'disabled' : ''}>💀 Kill</button>
           </div>
         </div>
 

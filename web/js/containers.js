@@ -314,36 +314,37 @@ function renderContainersGrid(list) {
 
         <!-- Card Action Footer -->
         <div class="container-card-footer">
-          <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
-            <!-- 🔄⚡ Recreate Button (Prominent) -->
-            <button class="btn btn-sm btn-recreate" onclick="openRecreateModalForContainer('${c.id}')" title="Tái tạo lại container (Recreate với image & config mới nhất)">
-              🔄⚡ Recreate
-            </button>
+          <!-- 🔄⚡ Recreate Button -->
+          <button class="btn btn-sm btn-recreate" onclick="openRecreateModalForContainer('${c.id}')" title="Tái tạo container (Recreate với image & config mới nhất)">
+            🔄⚡ Recreate
+          </button>
+
+          <!-- Action Buttons Group (Aligned in 1 single row) -->
+          <div class="card-actions-group" style="display: flex; gap: 6px; align-items: center;">
+            ${loadingIndicator}
 
             <!-- ▶️ Start / ⏹️ Stop Toggle -->
             ${isRunning ? `
-              <button class="btn-icon ctr-btn-stop" onclick="${onClickStop}" title="Dừng container" ${stopDisabled ? 'disabled' : ''}>⏹️</button>
+              <button class="btn-icon ctr-btn-stop" onclick="${onClickStop}" title="Dừng container (Stop)" ${stopDisabled ? 'disabled' : ''}>⏹️</button>
             ` : `
-              <button class="btn-icon ctr-btn-start" onclick="${onClickStart}" title="Khởi động container" ${startDisabled ? 'disabled' : ''}>▶️</button>
+              <button class="btn-icon ctr-btn-start" onclick="${onClickStart}" title="Khởi động container (Start)" ${startDisabled ? 'disabled' : ''}>▶️</button>
             `}
 
             <!-- 🔄 Restart -->
             <button class="btn-icon ctr-btn-restart" onclick="${onClickRestart}" title="Khởi động lại (Restart)" ${restartDisabled ? 'disabled' : ''}>🔄</button>
+
+            <!-- 📋 Logs -->
+            <button class="btn-icon" onclick="openLogsModal('${c.id}', '${escapeHTML(c.name)}')" title="Xem Live Logs">📋</button>
 
             <!-- 💻 Terminal (if running) -->
             ${isRunning ? `
               <button class="btn-icon" onclick="openTerminalModal('${c.id}', '${escapeHTML(c.name)}')" title="Mở Web Terminal Shell">💻</button>
             ` : ''}
 
-            <!-- 📋 Logs -->
-            <button class="btn-icon" onclick="openLogsModal('${c.id}', '${escapeHTML(c.name)}')" title="Xem Live Logs">📋</button>
-          </div>
-
-          <!-- Secondary actions -->
-          <div style="display: flex; gap: 4px; align-items: center;">
-            ${loadingIndicator}
+            <!-- 🤖 AI Diagnose -->
             <button class="btn-icon" style="color: var(--accent-blue);" onclick="diagnoseContainerWithAI('${c.id}', '${escapeHTML(c.name)}')" title="AI Phân tích lỗi">🤖</button>
-            <button class="btn-icon ctr-btn-kill" onclick="${onClickKill}" title="Kill Container (SIGKILL khẩn cấp)" ${killDisabled ? 'disabled' : ''}>💀</button>
+
+            <!-- 🗑️ Delete -->
             <button class="btn-icon" style="color: var(--accent-red);" onclick="removeContainerPrompt('${c.id}', '${escapeHTML(c.name)}')" title="Xóa Container">🗑️</button>
           </div>
         </div>
@@ -459,36 +460,27 @@ function renderContainersTable(list) {
               🔄⚡
             </button>
 
-            <!-- ▶️ Start -->
-            <button class="btn-icon ctr-btn-start${startDisabled ? ' ctr-btn-disabled' : ''}"
-              onclick="${onClickStart}"
-              title="Start Container"
-              ${startDisabled ? 'disabled' : ''}>▶️</button>
-
-            <!-- ⏹️ Stop -->
-            <button class="btn-icon ctr-btn-stop${stopDisabled ? ' ctr-btn-disabled' : ''}"
-              onclick="${onClickStop}"
-              title="Stop Container"
-              ${stopDisabled ? 'disabled' : ''}>⏹️</button>
+            <!-- ▶️ Start / ⏹️ Stop Toggle -->
+            ${isRunning ? `
+              <button class="btn-icon ctr-btn-stop" onclick="${onClickStop}" title="Dừng container (Stop)" ${stopDisabled ? 'disabled' : ''}>⏹️</button>
+            ` : `
+              <button class="btn-icon ctr-btn-start" onclick="${onClickStart}" title="Khởi động container (Start)" ${startDisabled ? 'disabled' : ''}>▶️</button>
+            `}
 
             <!-- 🔄 Restart -->
-            <button class="btn-icon ctr-btn-restart${restartDisabled ? ' ctr-btn-disabled' : ''}"
-              onclick="${onClickRestart}"
-              title="Restart Container"
-              ${restartDisabled ? 'disabled' : ''}>🔄</button>
+            <button class="btn-icon ctr-btn-restart" onclick="${onClickRestart}" title="Khởi động lại (Restart)" ${restartDisabled ? 'disabled' : ''}>🔄</button>
 
-            <!-- 💀 Kill -->
-            <button class="btn-icon ctr-btn-kill${killDisabled ? ' ctr-btn-disabled' : ''}"
-              onclick="${onClickKill}"
-              title="Kill Container (SIGKILL)"
-              ${killDisabled ? 'disabled' : ''}>💀</button>
+            <!-- 📋 Logs -->
+            <button class="btn-icon" onclick="openLogsModal('${c.id}', '${escapeHTML(c.name)}')" title="Xem Live Logs">📋</button>
 
             <!-- 💻 Terminal -->
             ${isRunning ? `<button class="btn-icon" onclick="openTerminalModal('${c.id}', '${escapeHTML(c.name)}')" title="Terminal Shell">💻</button>` : ''}
 
-            <button class="btn-icon" onclick="openLogsModal('${c.id}', '${escapeHTML(c.name)}')" title="View Logs">📋</button>
+            <!-- 🤖 AI Diagnose -->
             <button class="btn-icon" style="color: var(--accent-blue);" onclick="diagnoseContainerWithAI('${c.id}', '${escapeHTML(c.name)}')" title="AI Diagnose">🤖</button>
-            <button class="btn-icon" style="color: var(--accent-red);" onclick="removeContainerPrompt('${c.id}', '${escapeHTML(c.name)}')" title="Remove">🗑️</button>
+
+            <!-- 🗑️ Delete -->
+            <button class="btn-icon" style="color: var(--accent-red);" onclick="removeContainerPrompt('${c.id}', '${escapeHTML(c.name)}')" title="Xóa Container">🗑️</button>
           </div>
         </td>
       </tr>

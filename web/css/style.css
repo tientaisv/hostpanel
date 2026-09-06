@@ -1245,6 +1245,15 @@ input::placeholder { color: #71809a; opacity: 1; }
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   margin-top: auto;
   gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.card-actions-group {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
 }
 
 .btn-recreate {
@@ -1255,6 +1264,8 @@ input::placeholder { color: #71809a; opacity: 1; }
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .btn-recreate:hover {
