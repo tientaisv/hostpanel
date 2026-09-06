@@ -137,7 +137,7 @@ function renderComposeStacks(stacks) {
             <span class="badge ${srvBadge}" data-role="srv-badge">${srv.state.toUpperCase()}</span>
             ${srv.id ? `
               <div class="action-btns" style="display: flex; gap: 4px; align-items: center;">
-                <button class="btn-icon btn-recreate" style="padding: 2px 6px; font-size: 0.75rem;" onclick="openRecreateModalForCompose('${escapeHTML(st.project)}', '${escapeHTML(srv.service || srv.name)}', '${escapeHTML(st.working_dir || '')}', '${escapeHTML(st.config_file || '')}')" title="Recreate Service (docker compose up -d --force-recreate ${escapeHTML(srv.service || srv.name)})">🔄⚡</button>
+                <button class="btn-icon btn-recreate" onclick="openRecreateModalForCompose('${escapeHTML(st.project)}', '${escapeHTML(srv.service || srv.name)}', '${escapeHTML(st.working_dir || '')}', '${escapeHTML(st.config_file || '')}')" title="⚡ Recreate Service (docker compose up -d --force-recreate)">⚡</button>
                 ${srv.state === 'running' ? `
                   <button class="btn-icon ctr-btn-stop" onclick="containerActionFromCompose('${srv.id}', 'stop')" title="Stop Service">⏹️</button>
                 ` : `

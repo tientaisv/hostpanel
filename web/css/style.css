@@ -1263,15 +1263,24 @@ input::placeholder { color: #71809a; opacity: 1; }
   font-weight: 600;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .btn-recreate:hover {
-  background: #0284c7 !important;
+  background: rgba(56, 189, 248, 0.25) !important;
   color: #ffffff !important;
   border-color: #38bdf8 !important;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.35);
+}
+
+.btn-icon.btn-recreate {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 1rem;
 }
 
 /* Sticky table headers */

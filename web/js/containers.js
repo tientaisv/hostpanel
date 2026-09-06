@@ -314,13 +314,10 @@ function renderContainersGrid(list) {
 
         <!-- Card Action Footer -->
         <div class="container-card-footer">
-          <!-- 🔄⚡ Recreate Button -->
-          <button class="btn btn-sm btn-recreate" onclick="openRecreateModalForContainer('${c.id}')" title="Tái tạo container (Recreate với image & config mới nhất)">
-            🔄⚡ Recreate
-          </button>
-
-          <!-- Action Buttons Group (Aligned in 1 single row) -->
           <div class="card-actions-group" style="display: flex; gap: 6px; align-items: center;">
+            <!-- ⚡ Recreate Button -->
+            <button class="btn-icon btn-recreate" onclick="openRecreateModalForContainer('${c.id}')" title="⚡ Tái tạo Container (Recreate với image & cấu hình mới nhất)">⚡</button>
+
             ${loadingIndicator}
 
             <!-- ▶️ Start / ⏹️ Stop Toggle -->
@@ -340,7 +337,9 @@ function renderContainersGrid(list) {
             ${isRunning ? `
               <button class="btn-icon" onclick="openTerminalModal('${c.id}', '${escapeHTML(c.name)}')" title="Mở Web Terminal Shell">💻</button>
             ` : ''}
+          </div>
 
+          <div style="display: flex; gap: 6px; align-items: center;">
             <!-- 🤖 AI Diagnose -->
             <button class="btn-icon" style="color: var(--accent-blue);" onclick="diagnoseContainerWithAI('${c.id}', '${escapeHTML(c.name)}')" title="AI Phân tích lỗi">🤖</button>
 
@@ -455,9 +454,9 @@ function renderContainersTable(list) {
         <td>${ipsHTML}</td>
         <td>
           <div class="action-btns" style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
-            <!-- 🔄⚡ Recreate Button -->
-            <button class="btn btn-sm btn-recreate" style="padding: 3px 8px; font-size: 0.75rem;" onclick="openRecreateModalForContainer('${c.id}')" title="Recreate Container">
-              🔄⚡
+            <!-- ⚡ Recreate Button -->
+            <button class="btn-icon btn-recreate" onclick="openRecreateModalForContainer('${c.id}')" title="⚡ Tái tạo Container (Recreate với image & cấu hình mới nhất)">
+              ⚡
             </button>
 
             <!-- ▶️ Start / ⏹️ Stop Toggle -->
