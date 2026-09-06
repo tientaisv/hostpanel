@@ -219,6 +219,9 @@ func authWSMiddleware(next http.HandlerFunc) http.HandlerFunc {
 func staticAuthMiddleware(next http.Handler, webDir string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
+		// Prevent aggressive browser caching of UI static assets
+		w.Header().Set("Cache-Control", "no-cache, must-revalidate")
+
 		// Whitelist public resources required by login page
 		if path == "/login.html" || path == "/css/style.css" || strings.HasPrefix(path, "/js/login.js") || path == "/favicon.ico" {
 			next.ServeHTTP(w, r)
