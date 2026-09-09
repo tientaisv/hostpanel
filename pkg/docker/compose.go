@@ -287,14 +287,28 @@ func (c *Client) RecreateCompose(project, service, workingDir, configFile string
 	// 3. Find Compose CLI tool
 	cliCmd := ""
 	var baseArgs []string
-	if path, err := exec.LookPath("docker-compose"); err == nil {
-		cliCmd = path
-	} else if path, err := exec.LookPath("podman-compose"); err == nil {
-		cliCmd = path
-	} else if path, err := exec.LookPath("docker"); err == nil {
-		if err := exec.Command("docker", "compose", "version").Run(); err == nil {
+	if c.IsPodman() {
+		// Prefer podman-compose on Podman systems
+		if path, err := exec.LookPath("podman-compose"); err == nil {
 			cliCmd = path
-			baseArgs = append(baseArgs, "compose")
+		} else if path, err := exec.LookPath("docker-compose"); err == nil {
+			cliCmd = path
+		} else if path, err := exec.LookPath("docker"); err == nil {
+			if err := exec.Command("docker", "compose", "version").Run(); err == nil {
+				cliCmd = path
+				baseArgs = append(baseArgs, "compose")
+			}
+		}
+	} else {
+		if path, err := exec.LookPath("docker-compose"); err == nil {
+			cliCmd = path
+		} else if path, err := exec.LookPath("podman-compose"); err == nil {
+			cliCmd = path
+		} else if path, err := exec.LookPath("docker"); err == nil {
+			if err := exec.Command("docker", "compose", "version").Run(); err == nil {
+				cliCmd = path
+				baseArgs = append(baseArgs, "compose")
+			}
 		}
 	}
 
@@ -326,6 +340,9 @@ func (c *Client) RecreateCompose(project, service, workingDir, configFile string
 		cmd.Dir = workingDir
 	}
 	cmd.Env = os.Environ()
+	if c.IsPodman() {
+		cmd.Env = append(cmd.Env, "DOCKER_HOST=unix:///run/podman/podman.sock")
+	}
 
 	out, err := cmd.CombinedOutput()
 	outStr := strings.TrimSpace(string(out))

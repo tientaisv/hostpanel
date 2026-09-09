@@ -245,6 +245,11 @@ if [ "$ENGINE_CHOICE" = "podman" ]; then
         ln -sf /run/podman/podman.sock /var/run/docker.sock
     fi
 
+    # Persist symlink across reboots via systemd-tmpfiles
+    mkdir -p /etc/tmpfiles.d
+    echo "L+ /var/run/docker.sock - - - - /run/podman/podman.sock" > /etc/tmpfiles.d/podman-docker-socket.conf
+    systemd-tmpfiles --create /etc/tmpfiles.d/podman-docker-socket.conf >/dev/null 2>&1 || true
+
     if systemctl is-active --quiet podman.socket || [ -S /run/podman/podman.sock ]; then
         echo -e "${GREEN}✅ Podman Socket đã sẵn sàng: /run/podman/podman.sock${NC}"
     else

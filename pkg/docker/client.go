@@ -42,7 +42,7 @@ type Client struct {
 func newSingleClient(socketPath string) (*SingleEngineClient, error) {
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return net.DialTimeout("unix", socketPath, 3*time.Second)
+			return net.DialTimeout("unix", socketPath, 5*time.Second)
 		},
 	}
 
@@ -50,7 +50,7 @@ func newSingleClient(socketPath string) (*SingleEngineClient, error) {
 		socketPath: socketPath,
 		httpClient: &http.Client{
 			Transport: transport,
-			Timeout:   5 * time.Second,
+			Timeout:   8 * time.Second,
 		},
 		engineInfo: EngineInfo{
 			Name:       "Container Engine",
@@ -58,8 +58,19 @@ func newSingleClient(socketPath string) (*SingleEngineClient, error) {
 		},
 	}
 
-	// Probe
-	body, code, err := c.Get("/version")
+	// Probe with retry (especially useful when socket is activated on-demand by systemd at boot)
+	var body []byte
+	var code int
+	var err error
+	for attempt := 1; attempt <= 3; attempt++ {
+		body, code, err = c.Get("/version")
+		if err == nil && (code == 200 || code == 204) {
+			break
+		}
+		if attempt < 3 {
+			time.Sleep(1 * time.Second)
+		}
+	}
 	if err != nil || (code != 200 && code != 204) {
 		return nil, fmt.Errorf("socket %s not responding: %v", socketPath, err)
 	}
@@ -101,57 +112,87 @@ func newSingleClient(socketPath string) (*SingleEngineClient, error) {
 	return c, nil
 }
 
-func NewClient(socketPath string) *Client {
+func probeCandidateSockets(socketPath string) []*SingleEngineClient {
 	var activeClients []*SingleEngineClient
 
 	if socketPath != "" {
 		if sc, err := newSingleClient(socketPath); err == nil {
 			activeClients = append(activeClients, sc)
 		}
-	} else {
-		// Probe all candidate sockets
-		candidates := []string{
-			"/run/podman/podman.sock",
-			"/var/run/podman/podman.sock",
+		return activeClients
+	}
+
+	// Probe all candidate sockets (Podman and Docker)
+	candidates := []string{
+		"/run/podman/podman.sock",
+		"/var/run/podman/podman.sock",
+	}
+	if runtimeDir := os.Getenv("XDG_RUNTIME_DIR"); runtimeDir != "" {
+		candidates = append(candidates, runtimeDir+"/podman/podman.sock")
+	}
+	uid := os.Getuid()
+	candidates = append(candidates, fmt.Sprintf("/run/user/%d/podman/podman.sock", uid))
+	candidates = append(candidates, "/var/run/docker.sock", "/run/docker.sock")
+
+	seenSockets := make(map[string]bool)
+
+	for _, path := range candidates {
+		realPath, errEval := filepath.EvalSymlinks(path)
+		if errEval != nil {
+			realPath = path
 		}
-		if runtimeDir := os.Getenv("XDG_RUNTIME_DIR"); runtimeDir != "" {
-			candidates = append(candidates, runtimeDir+"/podman/podman.sock")
+		if seenSockets[realPath] {
+			continue
 		}
-		uid := os.Getuid()
-		candidates = append(candidates, fmt.Sprintf("/run/user/%d/podman/podman.sock", uid))
-		candidates = append(candidates, "/run/docker.sock", "/var/run/docker.sock")
 
-		seenSockets := make(map[string]bool)
-
-		for _, path := range candidates {
-			realPath, errEval := filepath.EvalSymlinks(path)
-			if errEval != nil {
-				realPath = path
-			}
-			if seenSockets[realPath] {
-				continue
-			}
-
-			if fi, err := os.Stat(realPath); err == nil {
-				if fi.Mode()&os.ModeSocket != 0 || fi.Mode().IsRegular() || !fi.IsDir() {
-					if sc, errNew := newSingleClient(realPath); errNew == nil {
-						seenSockets[realPath] = true
-						seenSockets[path] = true
-						activeClients = append(activeClients, sc)
-					}
+		if fi, err := os.Stat(realPath); err == nil {
+			if fi.Mode()&os.ModeSocket != 0 || fi.Mode().IsRegular() || !fi.IsDir() {
+				if sc, errNew := newSingleClient(realPath); errNew == nil {
+					seenSockets[realPath] = true
+					seenSockets[path] = true
+					activeClients = append(activeClients, sc)
 				}
 			}
 		}
 	}
 
+	return activeClients
+}
+
+func NewClient(socketPath string) *Client {
+	var activeClients []*SingleEngineClient
+
+	// Try probing up to 3 times at startup with 1.5s delay if nothing found yet
+	for attempt := 1; attempt <= 3; attempt++ {
+		activeClients = probeCandidateSockets(socketPath)
+		if len(activeClients) > 0 {
+			break
+		}
+		if attempt < 3 {
+			time.Sleep(1500 * time.Millisecond)
+		}
+	}
+
 	if len(activeClients) == 0 {
-		// Fallback dummy
-		fallback, _ := newSingleClient("/run/podman/podman.sock")
+		// Fallback client: determine target socket and configure with REAL Unix domain transport
+		sock := "/run/podman/podman.sock"
+		if _, err := os.Stat("/run/docker.sock"); err == nil {
+			sock = "/run/docker.sock"
+		}
+		fallback, _ := newSingleClient(sock)
 		if fallback == nil {
+			transport := &http.Transport{
+				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+					return net.DialTimeout("unix", sock, 5*time.Second)
+				},
+			}
 			fallback = &SingleEngineClient{
-				socketPath: "/run/podman/podman.sock",
-				httpClient: &http.Client{},
-				engineInfo: EngineInfo{Name: "Podman", SocketPath: "/run/podman/podman.sock", IsPodman: true},
+				socketPath: sock,
+				httpClient: &http.Client{
+					Transport: transport,
+					Timeout:   8 * time.Second,
+				},
+				engineInfo: EngineInfo{Name: "Podman", SocketPath: sock, IsPodman: true},
 			}
 		}
 		activeClients = append(activeClients, fallback)
@@ -172,11 +213,52 @@ func NewClient(socketPath string) *Client {
 		}
 	}
 
-	return &Client{
+	c := &Client{
 		primary:     primary,
 		secondaries: secondaries,
 		allClients:  activeClients,
 	}
+
+	// Start background healthchecker to auto-refresh when socket/daemon becomes ready
+	c.startBackgroundHealthCheck(socketPath)
+
+	return c
+}
+
+func (c *Client) startBackgroundHealthCheck(socketPath string) {
+	go func() {
+		ticker := time.NewTicker(20 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			c.mu.RLock()
+			needsRefresh := c.primary == nil || c.primary.engineInfo.Version == "" || c.primary.engineInfo.Version == "unknown" || len(c.allClients) == 0
+			c.mu.RUnlock()
+
+			if needsRefresh {
+				discovered := probeCandidateSockets(socketPath)
+				if len(discovered) > 0 {
+					c.mu.Lock()
+					primary := discovered[0]
+					var secondaries []*SingleEngineClient
+					for _, sc := range discovered {
+						if sc.engineInfo.IsPodman {
+							primary = sc
+							break
+						}
+					}
+					for _, sc := range discovered {
+						if sc != primary {
+							secondaries = append(secondaries, sc)
+						}
+					}
+					c.primary = primary
+					c.secondaries = secondaries
+					c.allClients = discovered
+					c.mu.Unlock()
+				}
+			}
+		}
+	}()
 }
 
 func (c *Client) GetAllClients() []*SingleEngineClient {
