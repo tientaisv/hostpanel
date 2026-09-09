@@ -138,6 +138,9 @@ func main() {
 	mux.HandleFunc("/api/system/update/config", authMiddleware(handleUpdateConfig))
 	mux.HandleFunc("/api/system/swap/reset", authMiddleware(handleResetSwap))
 	mux.HandleFunc("/api/system/pwmconfig", authMiddleware(handlePwmConfig))
+	mux.HandleFunc("/api/system/governor", authMiddleware(handleCpuGovernorInfo))
+	mux.HandleFunc("/api/system/governor/set", authMiddleware(handleSetCpuGovernor))
+	mux.HandleFunc("/api/system/governor/turbo", authMiddleware(handleSetCpuTurbo))
 
 	mux.HandleFunc("/api/ai/diagnose", authMiddleware(handleAIDiagnose))
 	mux.HandleFunc("/api/ai/audit", authMiddleware(handleAIAudit))
@@ -748,6 +751,67 @@ func handlePwmConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonResponse(w, 200, map[string]string{"status": "ok", "message": msg})
+}
+
+func handleCpuGovernorInfo(w http.ResponseWriter, r *http.Request) {
+	info, err := system.GetCpuGovernorInfo()
+	if err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, 200, info)
+}
+
+func handleSetCpuGovernor(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	var req struct {
+		Governor string `json:"governor"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonResponse(w, 400, map[string]string{"error": "Invalid request body"})
+		return
+	}
+	if err := system.SetCpuGovernor(req.Governor); err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	info, _ := system.GetCpuGovernorInfo()
+	jsonResponse(w, 200, map[string]interface{}{
+		"status":   "ok",
+		"message":  fmt.Sprintf("Đã chuyển CPU Governor sang '%s' thành công.", req.Governor),
+		"governor": info,
+	})
+}
+
+func handleSetCpuTurbo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		jsonResponse(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonResponse(w, 400, map[string]string{"error": "Invalid request body"})
+		return
+	}
+	if err := system.SetCpuTurbo(req.Enabled); err != nil {
+		jsonResponse(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	action := "Bật"
+	if !req.Enabled {
+		action = "Tắt"
+	}
+	info, _ := system.GetCpuGovernorInfo()
+	jsonResponse(w, 200, map[string]interface{}{
+		"status":   "ok",
+		"message":  fmt.Sprintf("Đã %s Turbo Boost thành công.", action),
+		"governor": info,
+	})
 }
 
 func handleSecurityAudit(w http.ResponseWriter, r *http.Request) {

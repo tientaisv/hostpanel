@@ -119,6 +119,9 @@ function initMonitoring() {
       } catch (e) {}
     }, 3000);
   };
+
+  // Initial load of CPU Governor status
+  loadGovernorInfo();
 }
 
 let currentStatsData = null;
@@ -578,5 +581,268 @@ async function executePwmConfig() {
       btnConfirm.disabled = false;
       btnConfirm.innerHTML = '<span>⚡</span> Thử Lại';
     }
+  }
+}
+
+// ================= CPU GOVERNOR & TURBO BOOST MANAGEMENT =================
+let cachedGovernorData = null;
+
+const GOVERNOR_METADATA = {
+  powersave: {
+    icon: "🍃",
+    title: "Powersave",
+    desc: "Tiết kiệm điện năng tối đa, co giãn tần số linh hoạt theo tải thực tế (Khuyên dùng để máy mát & quạt êm).",
+    color: "#34d399",
+    bg: "rgba(52, 211, 153, 0.12)",
+    border: "rgba(52, 211, 153, 0.3)"
+  },
+  performance: {
+    icon: "🚀",
+    title: "Performance",
+    desc: "Khóa cứng xung nhịp ở mức tối đa liên tục, loại bỏ độ trễ tăng xung nhịp (Phù hợp khi server chịu tải cao).",
+    color: "#38bdf8",
+    bg: "rgba(56, 189, 248, 0.12)",
+    border: "rgba(56, 189, 248, 0.3)"
+  },
+  schedutil: {
+    icon: "⚖️",
+    title: "Schedutil",
+    desc: "Tự động điều phối xung nhịp dựa trên tải của Linux Kernel Scheduler (Cân bằng tối ưu giữa hiệu năng & điện năng).",
+    color: "#c084fc",
+    bg: "rgba(192, 132, 252, 0.12)",
+    border: "rgba(192, 132, 252, 0.3)"
+  },
+  ondemand: {
+    icon: "📈",
+    title: "Ondemand",
+    desc: "Tăng xung nhịp ngay lập tức khi phát hiện có tác vụ và hạ dần khi hệ thống nhàn rỗi.",
+    color: "#fbbf24",
+    bg: "rgba(251, 191, 36, 0.12)",
+    border: "rgba(251, 191, 36, 0.3)"
+  },
+  conservative: {
+    icon: "📉",
+    title: "Conservative",
+    desc: "Tăng giảm tần số từng bước nhẹ nhàng theo tải, tránh nhảy xung đột ngột.",
+    color: "#a3e635",
+    bg: "rgba(163, 230, 53, 0.12)",
+    border: "rgba(163, 230, 53, 0.3)"
+  }
+};
+
+async function loadGovernorInfo(isManual = false) {
+  try {
+    const res = await fetch("/api/system/governor");
+    if (!res.ok) return;
+    const data = await res.json();
+    cachedGovernorData = data;
+
+    // Update Header Trigger Button
+    const badgeText = document.getElementById("gov-badge-text");
+    const badgeIcon = document.getElementById("gov-badge-icon");
+    const btnTrigger = document.getElementById("btn-governor-trigger");
+
+    if (data.supported) {
+      const curGov = data.current_governor || "unknown";
+      const meta = GOVERNOR_METADATA[curGov.toLowerCase()] || { icon: "⚡", color: "#c084fc", bg: "rgba(168, 85, 247, 0.12)", border: "rgba(168, 85, 247, 0.3)" };
+      if (badgeText) badgeText.textContent = `Gov: ${curGov.toUpperCase()}`;
+      if (badgeIcon) badgeIcon.textContent = meta.icon;
+      if (btnTrigger) {
+        btnTrigger.style.display = "inline-flex";
+        btnTrigger.style.color = meta.color;
+        btnTrigger.style.background = meta.bg;
+        btnTrigger.style.borderColor = meta.border;
+      }
+    } else {
+      if (btnTrigger) btnTrigger.style.display = "none";
+      return;
+    }
+
+    // Update Modal Specs
+    const elDriver = document.getElementById("gov-info-driver");
+    const elCurFreq = document.getElementById("gov-info-cur-freq");
+    const elRange = document.getElementById("gov-info-range");
+    const elCores = document.getElementById("gov-info-cores");
+
+    if (elDriver) elDriver.textContent = data.driver || "Standard";
+    if (elCurFreq) elCurFreq.textContent = data.cur_freq_mhz > 0 ? `${data.cur_freq_mhz} MHz` : "--";
+    if (elRange) {
+      if (data.min_freq_mhz > 0 && data.max_freq_mhz > 0) {
+        elRange.textContent = `${data.min_freq_mhz} - ${data.max_freq_mhz} MHz`;
+      } else {
+        elRange.textContent = "--";
+      }
+    }
+    if (elCores) elCores.textContent = `${data.cores_count || 1} Cores`;
+
+    // Dynamically render Available Governors
+    const container = document.getElementById("gov-list-container");
+    if (container) {
+      const avail = data.available_governors || [];
+      if (avail.length === 0) {
+        container.innerHTML = `<div style="color: var(--text-muted); font-size: 0.85rem; padding: 10px;">Không có danh sách governor khả dụng từ sysfs.</div>`;
+      } else {
+        const curGov = (data.current_governor || "").toLowerCase();
+        let html = "";
+        avail.forEach((g) => {
+          const gLower = g.toLowerCase();
+          const meta = GOVERNOR_METADATA[gLower] || {
+            icon: "⚙️",
+            title: g.toUpperCase(),
+            desc: `Chế độ điều phối tần số CPU: ${g}`,
+            color: "#94a3b8",
+            bg: "rgba(148, 163, 184, 0.08)",
+            border: "rgba(148, 163, 184, 0.2)"
+          };
+          const isActive = gLower === curGov;
+
+          html += `
+            <div style="background: ${isActive ? meta.bg : '#090e18'}; border: 1px solid ${isActive ? meta.color : 'var(--border-color)'}; border-radius: var(--radius-md); padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; gap: 12px; transition: all 0.2s;">
+              <div style="flex: 1;">
+                <div style="display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 0.95rem; color: ${isActive ? meta.color : 'var(--text-main)'};">
+                  <span>${meta.icon}</span> ${meta.title}
+                  ${isActive ? `<span style="font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; background: ${meta.color}; color: #000; font-weight: 700;">ĐANG BẬT</span>` : ''}
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; line-height: 1.4;">
+                  ${meta.desc}
+                </div>
+              </div>
+              <div>
+                ${isActive 
+                  ? `<button class="btn" disabled style="padding: 6px 14px; font-size: 0.8rem; font-weight: 600; opacity: 0.6; cursor: default; background: transparent; border: 1px solid ${meta.color}; color: ${meta.color}; border-radius: var(--radius-sm);">✓ Đang Dùng</button>`
+                  : `<button class="btn btn-primary" onclick="setGovernor('${g}')" style="padding: 6px 14px; font-size: 0.8rem; font-weight: 700; background: #0284c7; border: none; border-radius: var(--radius-sm); white-space: nowrap;">⚡ Chọn</button>`
+                }
+              </div>
+            </div>
+          `;
+        });
+        container.innerHTML = html;
+      }
+    }
+
+    // Turbo Boost section
+    const turboSec = document.getElementById("gov-turbo-section");
+    const turboBtn = document.getElementById("btn-toggle-turbo");
+    if (turboSec) {
+      if (!data.turbo_supported) {
+        turboSec.style.display = "none";
+      } else {
+        turboSec.style.display = "flex";
+        if (turboBtn) {
+          if (data.turbo_enabled) {
+            turboBtn.innerHTML = `<span>🚀</span> Đang Bật (Nhấn để Tắt)`;
+            turboBtn.style.background = "rgba(239, 68, 68, 0.15)";
+            turboBtn.style.color = "#f87171";
+            turboBtn.style.border = "1px solid rgba(239, 68, 68, 0.3)";
+          } else {
+            turboBtn.innerHTML = `<span>⚡</span> Đang Tắt (Nhấn để Bật)`;
+            turboBtn.style.background = "rgba(52, 211, 153, 0.15)";
+            turboBtn.style.color = "#34d399";
+            turboBtn.style.border = "1px solid rgba(52, 211, 153, 0.3)";
+          }
+        }
+      }
+    }
+
+    if (isManual && typeof showToast === "function") {
+      showToast("✅ Đã làm mới thông tin CPU Governor!", "success");
+    }
+  } catch (e) {
+    console.error("Error loading CPU governor info:", e);
+  }
+}
+
+function triggerGovernorModal() {
+  const modal = document.getElementById("modal-governor");
+  if (modal) modal.classList.add("active");
+  loadGovernorInfo(false);
+}
+
+async function setGovernor(targetGov) {
+  const statusMsg = document.getElementById("gov-status-msg");
+  if (statusMsg) {
+    statusMsg.style.display = "block";
+    statusMsg.style.background = "rgba(56, 189, 248, 0.15)";
+    statusMsg.style.color = "#38bdf8";
+    statusMsg.style.border = "1px solid rgba(56, 189, 248, 0.3)";
+    statusMsg.textContent = `⏳ Đang áp dụng CPU Governor '${targetGov}' trên tất cả core...`;
+  }
+
+  try {
+    const res = await fetch("/api/system/governor/set", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ governor: targetGov })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      if (statusMsg) {
+        statusMsg.style.background = "rgba(52, 211, 153, 0.15)";
+        statusMsg.style.color = "#34d399";
+        statusMsg.style.border = "1px solid rgba(52, 211, 153, 0.3)";
+        statusMsg.textContent = `✅ ${data.message || 'Thành công!'}`;
+      }
+      if (typeof showToast === "function") {
+        showToast(data.message || `Đã chuyển sang governor '${targetGov}'`, "success");
+      }
+      await loadGovernorInfo(false);
+      setTimeout(() => {
+        if (statusMsg) statusMsg.style.display = "none";
+      }, 3000);
+    } else {
+      if (statusMsg) {
+        statusMsg.style.background = "rgba(248, 113, 113, 0.15)";
+        statusMsg.style.color = "#f87171";
+        statusMsg.style.border = "1px solid rgba(248, 113, 113, 0.3)";
+        statusMsg.textContent = `❌ Lỗi: ${data.error || 'Thất bại'}`;
+      }
+      if (typeof showToast === "function") {
+        showToast(`❌ ${data.error || 'Lỗi áp dụng governor'}`, "error");
+      }
+    }
+  } catch (err) {
+    if (statusMsg) {
+      statusMsg.style.background = "rgba(248, 113, 113, 0.15)";
+      statusMsg.style.color = "#f87171";
+      statusMsg.style.border = "1px solid rgba(248, 113, 113, 0.3)";
+      statusMsg.textContent = `❌ Lỗi kết nối: ${err.message}`;
+    }
+  }
+}
+
+async function toggleCpuTurbo() {
+  if (!cachedGovernorData) return;
+  const currentTurbo = cachedGovernorData.turbo_enabled;
+  const newTurbo = !currentTurbo;
+  const turboBtn = document.getElementById("btn-toggle-turbo");
+
+  if (turboBtn) {
+    turboBtn.disabled = true;
+    turboBtn.textContent = "⏳ Đang đổi...";
+  }
+
+  try {
+    const res = await fetch("/api/system/governor/turbo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: newTurbo })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      if (typeof showToast === "function") {
+        showToast(data.message || (newTurbo ? "Đã bật Turbo Boost" : "Đã tắt Turbo Boost"), "success");
+      }
+      await loadGovernorInfo(false);
+    } else {
+      if (typeof showToast === "function") {
+        showToast(`❌ ${data.error || 'Lỗi thao tác Turbo Boost'}`, "error");
+      }
+    }
+  } catch (err) {
+    if (typeof showToast === "function") {
+      showToast(`❌ Lỗi kết nối: ${err.message}`, "error");
+    }
+  } finally {
+    if (turboBtn) turboBtn.disabled = false;
   }
 }

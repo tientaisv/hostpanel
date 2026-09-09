@@ -238,6 +238,9 @@
             <span>🖥️</span> Thông Tin Server & Cấu Hình Phần Cứng
           </div>
           <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-secondary" id="btn-governor-trigger" onclick="triggerGovernorModal()" title="Quản lý CPU Scaling Governor & Turbo Boost" style="padding: 6px 12px; font-size: 0.82rem; background: rgba(168, 85, 247, 0.12); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); display: flex; align-items: center; gap: 6px;">
+              <span id="gov-badge-icon">⚡</span> <span id="gov-badge-text">Governor: --</span>
+            </button>
             <button class="btn btn-secondary" onclick="triggerPwmConfigModal()" title="Chạy lệnh pwmconfig -c 0 -s 255 (Tăng tốc quạt tối đa)" style="padding: 6px 12px; font-size: 0.82rem; background: rgba(56, 189, 248, 0.12); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">
               <span>🌪️</span> Max Quạt (PWM 255)
             </button>
@@ -1303,6 +1306,78 @@ Bạn có thể bấm nút "🛡️ System Health AI Audit" ở trên để tôi
     </div>
   </div>
 
+  <!-- MODAL: CPU GOVERNOR & TURBO BOOST CONFIG -->
+  <div class="modal-overlay" id="modal-governor">
+    <div class="modal-box" style="max-width: 560px;">
+      <div class="modal-header">
+        <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+          <span>⚡</span> Quản Lý CPU Scaling Governor & Turbo Boost
+        </div>
+        <button class="btn btn-secondary" onclick="closeModal('modal-governor')">✕</button>
+      </div>
+      <div class="modal-body" style="line-height: 1.6;">
+        <p style="margin-bottom: 14px; font-size: 0.9rem; color: var(--text-muted);">
+          Kiểm soát chính sách điều phối xung nhịp CPU và công nghệ Turbo Boost theo thời gian thực (áp dụng trực tiếp vào Linux Kernel sysfs).
+        </p>
+
+        <!-- CPU Scaling Specs Box -->
+        <div style="background: #090e18; padding: 12px 16px; border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-bottom: 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; font-size: 0.82rem;">
+          <div>
+            <div style="color: var(--text-muted);">Trình điều khiển (Driver):</div>
+            <div style="font-weight: 700; color: #38bdf8;" id="gov-info-driver">--</div>
+          </div>
+          <div>
+            <div style="color: var(--text-muted);">Xung nhịp hiện tại:</div>
+            <div style="font-weight: 700; color: #34d399;" id="gov-info-cur-freq">-- MHz</div>
+          </div>
+          <div>
+            <div style="color: var(--text-muted);">Dải xung nhịp (Min - Max):</div>
+            <div style="font-weight: 700; color: #fbbf24;" id="gov-info-range">-- MHz</div>
+          </div>
+          <div>
+            <div style="color: var(--text-muted);">Số nhân áp dụng:</div>
+            <div style="font-weight: 700; color: #c084fc;" id="gov-info-cores">-- Cores</div>
+          </div>
+        </div>
+
+        <!-- Dynamic Available Governors Section -->
+        <div style="margin-bottom: 18px;">
+          <div style="font-size: 0.88rem; font-weight: 700; color: var(--text-main); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+            <span>Chế độ Governor khả dụng (Tự động nhận diện):</span>
+            <span style="font-size: 0.75rem; color: var(--text-muted);" id="gov-scan-hint">Auto-detected</span>
+          </div>
+          <div id="gov-list-container" style="display: grid; grid-template-columns: 1fr; gap: 8px;">
+            <div style="color: var(--text-muted); font-size: 0.85rem; padding: 12px; text-align: center;">Đang quét thông tin CPU kernel...</div>
+          </div>
+        </div>
+
+        <!-- Turbo Boost Section -->
+        <div id="gov-turbo-section" style="background: rgba(15, 23, 42, 0.7); padding: 14px 16px; border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div style="font-size: 0.92rem; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 6px;">
+              <span>🚀</span> Intel / CPU Turbo Boost
+            </div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;" id="gov-turbo-desc">
+              Tự động ép xung tức thời khi có tác vụ nặng. Tắt Turbo Boost giúp giảm nhiệt độ máy rõ rệt.
+            </div>
+          </div>
+          <button class="btn" id="btn-toggle-turbo" onclick="toggleCpuTurbo()" style="padding: 6px 14px; font-size: 0.82rem; font-weight: 700; border-radius: var(--radius-sm); border: none; cursor: pointer;">
+            --
+          </button>
+        </div>
+
+        <div id="gov-status-msg" style="display: none; padding: 10px 14px; border-radius: var(--radius-md); font-size: 0.85rem; margin-bottom: 14px;"></div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button class="btn btn-secondary" onclick="closeModal('modal-governor')">Đóng</button>
+          <button class="btn btn-primary" onclick="loadGovernorInfo(true)" style="background: #0284c7; color: #fff; border: none; font-weight: 700;">
+            🔄 Làm Mới
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: AUTO UPDATE SYSTEM -->
   <div class="modal-overlay" id="modal-update">
     <div class="modal-box" style="max-width: 580px;">
@@ -1531,7 +1606,7 @@ Bạn có thể bấm nút "🛡️ System Health AI Audit" ở trên để tôi
   <script src="js/files.js?v=4.2"></script>
   <script src="js/networks.js?v=4.2"></script>
   <script src="js/ai.js?v=4.2"></script>
-  <script src="js/monitoring.js?v=4.2"></script>
+  <script src="js/monitoring.js?v=4.3"></script>
   <script src="js/updater.js?v=4.2"></script>
   <script src="js/firewall.js?v=4.2"></script>
   <script src="js/warmup.js?v=4.2"></script>
