@@ -84,6 +84,7 @@ func main() {
 	mux.HandleFunc("/api/login", handleLogin)
 	mux.HandleFunc("/api/logout", handleLogout)
 	mux.HandleFunc("/api/auth/check", handleAuthCheck)
+	mux.HandleFunc("/api/auth/change-password", authMiddleware(handleChangePassword))
 
 	// Protected REST Endpoints
 	mux.HandleFunc("/api/host", authMiddleware(handleHostStats))
@@ -322,6 +323,37 @@ func handleAuthCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonResponse(w, 401, map[string]string{"status": "unauthenticated"})
+}
+
+func handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonResponse(w, http.StatusMethodNotAllowed, map[string]string{"error": "Chỉ chấp nhận phương thức POST"})
+		return
+	}
+	var req struct {
+		OldPassword string `json:"old_password"`
+		NewPassword string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "Dữ liệu yêu cầu không hợp lệ"})
+		return
+	}
+	if req.OldPassword == "" {
+		jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "Vui lòng nhập mật khẩu hiện tại"})
+		return
+	}
+	if len(req.NewPassword) < 6 {
+		jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "Mật khẩu mới phải có độ dài tối thiểu 6 ký tự"})
+		return
+	}
+	if err := auth.GlobalAuth.UpdatePassword(req.OldPassword, req.NewPassword); err != nil {
+		jsonResponse(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, http.StatusOK, map[string]interface{}{
+		"status":  "success",
+		"message": "Đã đổi mật khẩu thành công!",
+	})
 }
 
 func handleEngineInfo(w http.ResponseWriter, r *http.Request) {

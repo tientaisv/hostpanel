@@ -105,6 +105,9 @@
     </div>
 
     <div class="sidebar-footer" style="display: flex; flex-direction: column; gap: 6px;">
+      <button class="btn btn-secondary" onclick="openPasswordModal()" title="Đổi mật khẩu tài khoản quản trị" style="width: 100%; justify-content: center; font-size: 0.82rem; background: rgba(168, 85, 247, 0.08); border-color: rgba(168, 85, 247, 0.25); color: #c084fc;">
+        🔑 Đổi Mật Khẩu
+      </button>
       <button class="btn btn-secondary" onclick="openUpdateModal()" title="Kiểm tra & Cập nhật phiên bản mới" style="width: 100%; justify-content: center; font-size: 0.82rem; background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.25); color: #38bdf8;">
         ⚡ Cập Nhật Hệ Thống
       </button>
@@ -1374,6 +1377,52 @@ Bạn có thể bấm nút "🛡️ System Health AI Audit" ở trên để tôi
             🔄 Làm Mới
           </button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: CHANGE PASSWORD -->
+  <div class="modal-overlay" id="modal-change-password">
+    <div class="modal-box" style="max-width: 440px;">
+      <div class="modal-header">
+        <div class="modal-title">🔑 Đổi Mật Khẩu Quản Trị</div>
+        <button class="btn btn-secondary" onclick="closeModal('modal-change-password')">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 20px;">
+        <form id="form-change-password" onsubmit="submitChangePassword(event)">
+          <div style="margin-bottom: 14px;">
+            <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">MẬT KHẨU HIỆN TẠI</label>
+            <div style="position: relative;">
+              <input type="password" id="pwd-old" required placeholder="Nhập mật khẩu hiện tại" class="input-field" style="width: 100%; padding: 10px 38px 10px 12px; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-main); font-size: 0.9rem;">
+              <span onclick="togglePasswordVisibility('pwd-old', this)" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: var(--text-muted); font-size: 1rem;">👁️</span>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 14px;">
+            <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">MẬT KHẨU MỚI (Tối thiểu 6 ký tự)</label>
+            <div style="position: relative;">
+              <input type="password" id="pwd-new" required minlength="6" placeholder="Nhập mật khẩu mới" class="input-field" style="width: 100%; padding: 10px 38px 10px 12px; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-main); font-size: 0.9rem;">
+              <span onclick="togglePasswordVisibility('pwd-new', this)" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: var(--text-muted); font-size: 1rem;">👁️</span>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 18px;">
+            <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">XÁC NHẬN MẬT KHẨU MỚI</label>
+            <div style="position: relative;">
+              <input type="password" id="pwd-confirm" required minlength="6" placeholder="Nhập lại mật khẩu mới" class="input-field" style="width: 100%; padding: 10px 38px 10px 12px; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-main); font-size: 0.9rem;">
+              <span onclick="togglePasswordVisibility('pwd-confirm', this)" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: var(--text-muted); font-size: 1rem;">👁️</span>
+            </div>
+          </div>
+
+          <div id="pwd-msg-box" style="display: none; padding: 10px 12px; border-radius: 8px; font-size: 0.85rem; margin-bottom: 14px;"></div>
+
+          <div style="display: flex; gap: 10px; justify-content: flex-end;">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('modal-change-password')">Hủy</button>
+            <button type="submit" id="btn-submit-pwd" class="btn btn-primary" style="background: #a855f7; border-color: #9333ea;">
+              <span id="pwd-btn-text">Lưu Mật Khẩu</span>
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   </div>

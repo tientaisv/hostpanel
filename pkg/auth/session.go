@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -117,6 +118,55 @@ func InitAuth(configPath string) {
 
 func (s *SessionStore) IsDefaultCredentials() bool {
 	return s.Config.AdminUser == "admin" && s.Config.AdminPass == "dockpulse2026"
+}
+
+func (s *SessionStore) UpdatePassword(oldPass, newPass string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Check old password
+	if subtle.ConstantTimeCompare([]byte(s.Config.AdminPass), []byte(oldPass)) != 1 {
+		return fmt.Errorf("Mật khẩu hiện tại không chính xác")
+	}
+
+	if len(newPass) < 6 {
+		return fmt.Errorf("Mật khẩu mới phải có ít nhất 6 ký tự")
+	}
+
+	s.Config.AdminPass = newPass
+
+	// Persist to .env file if it exists
+	envPath := ".env"
+	if data, err := ioutil.ReadFile(envPath); err == nil {
+		lines := strings.Split(string(data), "\n")
+		updated := false
+		for i, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "ADMIN_PASS=") {
+				lines[i] = "ADMIN_PASS=" + newPass
+				updated = true
+				break
+			}
+		}
+		if !updated {
+			lines = append(lines, "ADMIN_PASS="+newPass)
+		}
+		_ = ioutil.WriteFile(envPath, []byte(strings.Join(lines, "\n")), 0600)
+	}
+
+	// Persist to config.json if it exists
+	configPath := "config.json"
+	if data, err := ioutil.ReadFile(configPath); err == nil {
+		var cfg Config
+		if errJSON := json.Unmarshal(data, &cfg); errJSON == nil {
+			cfg.AdminPass = newPass
+			if updatedData, errEnc := json.MarshalIndent(cfg, "", "  "); errEnc == nil {
+				_ = ioutil.WriteFile(configPath, updatedData, 0600)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (s *SessionStore) CheckRateLimit(ip string) (bool, int) {

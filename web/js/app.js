@@ -133,3 +133,109 @@ function showToast(msg, type = "info") {
   setTimeout(() => { toast.style.opacity = "0"; setTimeout(() => toast.remove(), 450); }, 3000);
 }
 
+// Password Management
+function openPasswordModal() {
+  const form = document.getElementById("form-change-password");
+  if (form) form.reset();
+  const msgBox = document.getElementById("pwd-msg-box");
+  if (msgBox) msgBox.style.display = "none";
+  openModal("modal-change-password");
+  setTimeout(() => document.getElementById("pwd-old")?.focus(), 150);
+}
+
+function togglePasswordVisibility(inputId, el) {
+  const inp = document.getElementById(inputId);
+  if (!inp) return;
+  if (inp.type === "password") {
+    inp.type = "text";
+    el.textContent = "🙈";
+  } else {
+    inp.type = "password";
+    el.textContent = "👁️";
+  }
+}
+
+async function submitChangePassword(e) {
+  e.preventDefault();
+  const oldPwd = document.getElementById("pwd-old").value;
+  const newPwd = document.getElementById("pwd-new").value;
+  const confirmPwd = document.getElementById("pwd-confirm").value;
+  const msgBox = document.getElementById("pwd-msg-box");
+  const btn = document.getElementById("btn-submit-pwd");
+  const btnText = document.getElementById("pwd-btn-text");
+
+  if (newPwd !== confirmPwd) {
+    if (msgBox) {
+      msgBox.style.display = "block";
+      msgBox.style.background = "rgba(239, 68, 68, 0.15)";
+      msgBox.style.color = "#f87171";
+      msgBox.style.border = "1px solid rgba(239, 68, 68, 0.3)";
+      msgBox.textContent = "Mật khẩu xác nhận không khớp!";
+    }
+    return;
+  }
+
+  if (newPwd.length < 6) {
+    if (msgBox) {
+      msgBox.style.display = "block";
+      msgBox.style.background = "rgba(239, 68, 68, 0.15)";
+      msgBox.style.color = "#f87171";
+      msgBox.style.border = "1px solid rgba(239, 68, 68, 0.3)";
+      msgBox.textContent = "Mật khẩu mới phải có ít nhất 6 ký tự!";
+    }
+    return;
+  }
+
+  try {
+    btn.disabled = true;
+    btnText.textContent = "Đang lưu...";
+    if (msgBox) msgBox.style.display = "none";
+
+    const res = await fetch("/api/auth/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ old_password: oldPwd, new_password: newPwd })
+    });
+
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      if (msgBox) {
+        msgBox.style.display = "block";
+        msgBox.style.background = "rgba(239, 68, 68, 0.15)";
+        msgBox.style.color = "#f87171";
+        msgBox.style.border = "1px solid rgba(239, 68, 68, 0.3)";
+        msgBox.textContent = data.error || "Không thể đổi mật khẩu!";
+      }
+      btn.disabled = false;
+      btnText.textContent = "Lưu Mật Khẩu";
+      return;
+    }
+
+    if (msgBox) {
+      msgBox.style.display = "block";
+      msgBox.style.background = "rgba(34, 197, 94, 0.15)";
+      msgBox.style.color = "#4ade80";
+      msgBox.style.border = "1px solid rgba(34, 197, 94, 0.3)";
+      msgBox.textContent = "✅ Đổi mật khẩu thành công! Mật khẩu mới đã được lưu.";
+    }
+    btnText.textContent = "Thành công!";
+    showToast("Đổi mật khẩu quản trị thành công!", "success");
+
+    setTimeout(() => {
+      closeModal("modal-change-password");
+      btn.disabled = false;
+      btnText.textContent = "Lưu Mật Khẩu";
+    }, 1500);
+  } catch (err) {
+    if (msgBox) {
+      msgBox.style.display = "block";
+      msgBox.style.background = "rgba(239, 68, 68, 0.15)";
+      msgBox.style.color = "#f87171";
+      msgBox.style.border = "1px solid rgba(239, 68, 68, 0.3)";
+      msgBox.textContent = "Lỗi kết nối máy chủ!";
+    }
+    btn.disabled = false;
+    btnText.textContent = "Lưu Mật Khẩu";
+  }
+}
+

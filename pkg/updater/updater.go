@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	CurrentVersion    = "v1.8.5"
+	CurrentVersion    = "v1.8.6"
 	GitHubRepo        = "tientaisv/hostpanel"
 	UpdateMu          sync.Mutex
 	IsUpdating        bool
