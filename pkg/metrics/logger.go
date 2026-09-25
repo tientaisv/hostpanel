@@ -56,7 +56,7 @@ func InitLogger(dockerClient *docker.Client) {
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 		},
-		pushInterval: 5 * time.Minute,
+		pushInterval: 30 * time.Minute,
 	}
 
 	// Read config from .env files or environment
@@ -124,6 +124,11 @@ func (l *MetricsLogger) loadEnvConfig() {
 	}
 	if key := os.Getenv("SUPABASE_KEY"); key != "" {
 		l.supabaseKey = key
+	}
+	if secStr := os.Getenv("METRICS_PUSH_INTERVAL_SEC"); secStr != "" {
+		if sec, errSec := strconv.Atoi(secStr); errSec == nil && sec > 0 {
+			l.pushInterval = time.Duration(sec) * time.Second
+		}
 	}
 }
 

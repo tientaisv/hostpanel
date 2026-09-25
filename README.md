@@ -149,7 +149,7 @@ ALTER TABLE resource_metrics DISABLE ROW LEVEL SECURITY;
 SERVER_NAME=vps-01
 SUPABASE_URL=https://your-project-id.supabase.co
 SUPABASE_KEY=your_supabase_api_key
-METRICS_PUSH_INTERVAL_SEC=300
+METRICS_PUSH_INTERVAL_SEC=1800 # Mặc định 1800 giây = 30 phút
 ```
 
 ---
